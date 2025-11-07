@@ -1,16 +1,11 @@
 import express, { Request, Response } from 'express';
-<<<<<<< HEAD
-import mongoose from 'mongoose';
-import { Event } from '../models/Event';
-import { authenticate, authorize, optionalAuth, AuthRequest } from '../middleware/auth';
-=======
-import { Prisma } from '@prisma/client';
-import { authenticate, requireAdmin, optionalAuth, AuthRequest } from '../middleware/auth';
->>>>>>> 4b0b14de97dba060b1c031c0101c390d758c2879
-import { validate, validateQuery } from '../middleware/validation';
-import { asyncHandler } from '../middleware/errorHandler';
-import prisma from '../config/prisma';
 import Joi from 'joi';
+import { Prisma } from '@prisma/client';
+
+import prisma from '../config/prisma';
+import { authenticate, optionalAuth, requireAdmin, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { validate, validateQuery } from '../middleware/validation';
 
 const router = express.Router();
 
@@ -49,53 +44,6 @@ const getEventsQuerySchema = Joi.object({
   filter: Joi.string().valid('upcoming', 'completed'),
 });
 
-<<<<<<< HEAD
-// @route   GET /api/events
-// @desc    Get all events
-// @access  Public
-// @route   GET /api/events/:id/participants
-// @desc    Get participants for an event
-// @access  Private (admin only)
-router.get('/:id/participants', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, message: 'Invalid event id' });
-  }
-  const event = await Event.findById(id).populate('attendees', 'fullName email username role');
-  if (!event) {
-    return res.status(404).json({ success: false, message: 'Event not found' });
-  }
-  return res.json({ success: true, data: { participants: event.attendees, count: event.attendees?.length || 0 } });
-}));
-
-router.get('/', optionalAuth, validateQuery(getEventsQuerySchema), asyncHandler(async (req, res) => {
-  const { page, limit, category, eventType, status, isActive, isFree, dateFrom, dateTo, search, sortBy, sortOrder } = req.query as any;
-  const skip = (page - 1) * limit;
-
-  // Build query
-  const query: any = {};
-  
-  if (category) {
-    query.category = { $regex: category, $options: 'i' };
-  }
-  
-  if (eventType) {
-    query.eventType = eventType;
-  }
-  
-  if (status) {
-    query.status = status;
-  }
-  
-  if (typeof isActive === 'boolean') {
-    query.isActive = isActive;
-  }
-  
-  if (typeof isFree === 'boolean') {
-    query.isFree = isFree;
-  }
-  
-=======
 interface EventsQuery {
   page?: number;
   limit?: number;
@@ -109,7 +57,6 @@ interface EventsQuery {
   filter?: 'upcoming' | 'completed';
 }
 
-// List events
 router.get('/', optionalAuth, validateQuery(getEventsQuerySchema), asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
   const { page, limit, category, status, dateFrom, dateTo, search, sortBy, sortOrder, filter } = req.query as unknown as EventsQuery;
   const pageNum = Number(page);
@@ -119,7 +66,6 @@ router.get('/', optionalAuth, validateQuery(getEventsQuerySchema), asyncHandler(
   const where: Prisma.EventWhereInput = {};
   if (category) where.category = { contains: String(category), mode: 'insensitive' };
   if (status) where.status = String(status);
->>>>>>> 4b0b14de97dba060b1c031c0101c390d758c2879
   if (dateFrom || dateTo) {
     where.date = {};
     if (dateFrom) where.date.gte = new Date(dateFrom);
