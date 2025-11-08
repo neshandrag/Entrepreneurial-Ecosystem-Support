@@ -16,8 +16,7 @@ html {
 
 /* Fix any white backgrounds that might appear */
 body {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  background-attachment: fixed;
+  background-color: #0f172a;
 }
 
 /* Fix potential white flash on page load */

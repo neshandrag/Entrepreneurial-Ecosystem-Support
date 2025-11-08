@@ -52,7 +52,7 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-6 py-12">
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-6 py-12">
       <div className="max-w-lg w-full space-y-10">
         {/* Header */}
         <div className="text-center">
