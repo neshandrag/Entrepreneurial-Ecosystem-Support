@@ -1,6 +1,6 @@
 import express from 'express';
-import { Report } from '../models/Report';
-import { authenticate, authorize, optionalAuth } from '../middleware/auth';
+import prisma from '../config/prisma';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { validate, validateQuery } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import Joi from 'joi';
@@ -61,118 +61,54 @@ router.get('/', authenticate, validateQuery(getReportsQuerySchema), asyncHandler
   const { page, limit, type, status, isPublic, search, sortBy, sortOrder } = req.query as any;
   const skip = (page - 1) * limit;
 
-  // Build query
-  const query: any = {};
-  
-  if (type) {
-    query.type = { $regex: type, $options: 'i' };
-  }
-  
-  if (status) {
-    query.status = status;
-  }
-  
-  if (typeof isPublic === 'boolean') {
-    query.isPublic = isPublic;
-  }
-  
+  const where: any = {};
+  if (type) where.type = { contains: String(type), mode: 'insensitive' };
+  if (status) where.status = String(status);
+  if (typeof isPublic === 'boolean') where.isPublic = isPublic;
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
-      { tags: { $in: [new RegExp(search, 'i')] } },
+    where.OR = [
+      { name: { contains: String(search), mode: 'insensitive' } },
+      { description: { contains: String(search), mode: 'insensitive' } },
+      { tags: { hasSome: [String(search)] } },
     ];
   }
-
-  // If not admin, only show user's reports or public reports
-  if (req.user.role !== 'admin') {
-    query.$or = [
-      { userId: req.user._id },
-      { isPublic: true }
-    ];
+  if (req.user.role !== 'ADMIN') {
+    where.OR = [{ userId: req.user.id }, { isPublic: true }];
   }
 
-  // Build sort object
-  const sort: any = {};
-  sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+  const orderBy: any = [{ [String(sortBy)]: String(sortOrder) }];
 
-  const reports = await Report.find(query)
-    .populate('userId', 'fullName email username')
-    .sort(sort)
-    .skip(skip)
-    .limit(limit);
+  const [reports, total] = await Promise.all([
+    prisma.report.findMany({ where, orderBy, skip, take: Number(limit) }),
+    prisma.report.count({ where }),
+  ]);
 
-  const total = await Report.countDocuments(query);
-
-  res.json({
-    success: true,
-    data: {
-      reports,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalReports: total,
-        hasNext: page < Math.ceil(total / limit),
-        hasPrev: page > 1,
-      },
-    },
-  });
+  res.json({ success: true, data: { reports, pagination: { currentPage: Number(page), totalPages: Math.ceil(total / Number(limit)), totalReports: total, hasNext: Number(page) < Math.ceil(total / Number(limit)), hasPrev: Number(page) > 1 } } });
 }));
 
 // @route   POST /api/reports
 // @desc    Create new report
 // @access  Private
 router.post('/', authenticate, validate(createReportSchema), asyncHandler(async (req, res) => {
-  const reportData = {
-    ...req.body,
-    userId: req.user._id,
-    processingInfo: {
-      startedAt: new Date(),
-      retryCount: 0,
-    },
-  };
+  const data = req.body as any;
+  const report = await prisma.report.create({ data: { ...data, userId: req.user.id, processingInfo: { startedAt: new Date(), retryCount: 0 } } });
 
-  const report = new Report(reportData);
-  await report.save();
-
-  // Populate user data
-  await report.populate('userId', 'fullName email username');
-
-  // TODO: Start report generation process in background
-  // This would typically involve a job queue or background worker
-  // For now, we'll simulate the process
   setTimeout(async () => {
     try {
-      report.status = 'ready';
-      report.processingInfo.completedAt = new Date();
-      report.fileSize = '2.5 MB';
-      report.filePath = `/reports/${report._id}.pdf`;
-      report.fileName = `${report.name}.pdf`;
-      report.mimeType = 'application/pdf';
-      await report.save();
+      await prisma.report.update({ where: { id: report.id }, data: { status: 'ready', processingInfo: { ...report.processingInfo, completedAt: new Date() }, fileSize: '2.5 MB', filePath: `/reports/${report.id}.pdf`, fileName: `${report.name}.pdf`, mimeType: 'application/pdf' } });
     } catch (error) {
-      report.status = 'error';
-      report.processingInfo.errorMessage = 'Report generation failed';
-      await report.save();
+      await prisma.report.update({ where: { id: report.id }, data: { status: 'error', processingInfo: { ...report.processingInfo, errorMessage: 'Report generation failed' } } });
     }
-  }, 5000); // Simulate 5 second processing time
+  }, 5000);
 
-  res.status(201).json({
-    success: true,
-    message: 'Report generation started',
-    data: {
-      report,
-    },
-  });
+  res.status(201).json({ success: true, message: 'Report generation started', data: { report } });
 }));
 
 // @route   GET /api/reports/:id
 // @desc    Get report by ID
 // @access  Private
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
-  const report = await Report.findById(req.params.id)
-    .populate('userId', 'fullName email username');
-  
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
   if (!report) {
     return res.status(404).json({
       success: false,
@@ -181,9 +117,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Check if user can access this report
-  if (req.user.role !== 'admin' && 
-      req.user._id.toString() !== report.userId._id.toString() && 
-      !report.isPublic) {
+  if (req.user.role !== 'ADMIN' && req.user.id !== report.userId && !report.isPublic) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -202,7 +136,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
 // @desc    Download report
 // @access  Private
 router.get('/:id/download', authenticate, asyncHandler(async (req, res) => {
-  const report = await Report.findById(req.params.id);
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
   
   if (!report) {
     return res.status(404).json({
@@ -212,9 +146,7 @@ router.get('/:id/download', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Check if user can access this report
-  if (req.user.role !== 'admin' && 
-      req.user._id.toString() !== report.userId.toString() && 
-      !report.isPublic) {
+  if (req.user.role !== 'ADMIN' && req.user.id !== report.userId && !report.isPublic) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -237,22 +169,14 @@ router.get('/:id/download', authenticate, asyncHandler(async (req, res) => {
 
   // TODO: Implement actual file download
   // For now, return a placeholder response
-  res.json({
-    success: true,
-    message: 'Report download initiated',
-    data: {
-      downloadUrl: `/api/reports/${report._id}/file`,
-      fileName: report.fileName,
-      fileSize: report.fileSize,
-    },
-  });
+  res.json({ success: true, message: 'Report download initiated', data: { downloadUrl: `/api/reports/${report.id}/file`, fileName: report.fileName, fileSize: report.fileSize } });
 }));
 
 // @route   PUT /api/reports/:id
 // @desc    Update report
 // @access  Private
 router.put('/:id', authenticate, validate(updateReportSchema), asyncHandler(async (req, res) => {
-  const report = await Report.findById(req.params.id);
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
   
   if (!report) {
     return res.status(404).json({
@@ -262,34 +186,22 @@ router.put('/:id', authenticate, validate(updateReportSchema), asyncHandler(asyn
   }
 
   // Check if user can update this report
-  if (req.user.role !== 'admin' && req.user._id.toString() !== report.userId.toString()) {
+  if (req.user.role !== 'ADMIN' && req.user.id !== report.userId) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
     });
   }
 
-  // Update report
-  Object.assign(report, req.body);
-  await report.save();
-
-  // Populate user data
-  await report.populate('userId', 'fullName email username');
-
-  res.json({
-    success: true,
-    message: 'Report updated successfully',
-    data: {
-      report,
-    },
-  });
+  const updated = await prisma.report.update({ where: { id: req.params.id }, data: req.body });
+  res.json({ success: true, message: 'Report updated successfully', data: { report: updated } });
 }));
 
 // @route   DELETE /api/reports/:id
 // @desc    Delete report
 // @access  Private
 router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
-  const report = await Report.findById(req.params.id);
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
   
   if (!report) {
     return res.status(404).json({
@@ -299,7 +211,7 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Check if user can delete this report
-  if (req.user.role !== 'admin' && req.user._id.toString() !== report.userId.toString()) {
+  if (req.user.role !== 'ADMIN' && req.user.id !== report.userId) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -312,19 +224,15 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Delete report record
-  await Report.findByIdAndDelete(req.params.id);
-
-  res.json({
-    success: true,
-    message: 'Report deleted successfully',
-  });
+  await prisma.report.delete({ where: { id: req.params.id } });
+  res.json({ success: true, message: 'Report deleted successfully' });
 }));
 
 // @route   POST /api/reports/:id/regenerate
 // @desc    Regenerate report
 // @access  Private
 router.post('/:id/regenerate', authenticate, asyncHandler(async (req, res) => {
-  const report = await Report.findById(req.params.id);
+  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
   
   if (!report) {
     return res.status(404).json({
@@ -334,7 +242,7 @@ router.post('/:id/regenerate', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Check if user can regenerate this report
-  if (req.user.role !== 'admin' && req.user._id.toString() !== report.userId.toString()) {
+  if (req.user.role !== 'ADMIN' && req.user.id !== report.userId) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -342,84 +250,49 @@ router.post('/:id/regenerate', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Reset report status
-  report.status = 'processing';
-  report.processingInfo.startedAt = new Date();
-  report.processingInfo.completedAt = undefined;
-  report.processingInfo.errorMessage = undefined;
-  report.processingInfo.retryCount += 1;
-  await report.save();
+  await prisma.report.update({ where: { id: req.params.id }, data: { status: 'processing', processingInfo: { startedAt: new Date(), retryCount: (report.processingInfo as any)?.retryCount ? (report.processingInfo as any).retryCount + 1 : 1 } } });
 
   // TODO: Start report generation process in background
   setTimeout(async () => {
     try {
-      report.status = 'ready';
-      report.processingInfo.completedAt = new Date();
-      report.fileSize = '2.5 MB';
-      report.filePath = `/reports/${report._id}.pdf`;
-      report.fileName = `${report.name}.pdf`;
-      report.mimeType = 'application/pdf';
-      await report.save();
+      await prisma.report.update({ where: { id: req.params.id }, data: { status: 'ready', processingInfo: { ...(report.processingInfo as any), completedAt: new Date() }, fileSize: '2.5 MB', filePath: `/reports/${req.params.id}.pdf`, fileName: `${report.name}.pdf`, mimeType: 'application/pdf' } });
     } catch (error) {
-      report.status = 'error';
-      report.processingInfo.errorMessage = 'Report generation failed';
-      await report.save();
+      await prisma.report.update({ where: { id: req.params.id }, data: { status: 'error', processingInfo: { ...(report.processingInfo as any), errorMessage: 'Report generation failed' } } });
     }
   }, 5000);
 
-  res.json({
-    success: true,
-    message: 'Report regeneration started',
-    data: {
-      report,
-    },
-  });
+  res.json({ success: true, message: 'Report regeneration started', data: { report } });
 }));
 
 // @route   GET /api/reports/stats/overview
 // @desc    Get report statistics overview
 // @access  Private
 router.get('/stats/overview', authenticate, asyncHandler(async (req, res) => {
-  const query: any = {};
-  
-  // If not admin, only show user's reports
-  if (req.user.role !== 'admin') {
-    query.userId = req.user._id;
-  }
+  const where: any = {};
+  if (req.user.role !== 'ADMIN') where.userId = req.user.id;
 
-  const totalReports = await Report.countDocuments(query);
-  const readyReports = await Report.countDocuments({ ...query, status: 'ready' });
-  const processingReports = await Report.countDocuments({ ...query, status: 'processing' });
-  const errorReports = await Report.countDocuments({ ...query, status: 'error' });
-  const publicReports = await Report.countDocuments({ ...query, isPublic: true });
-
-  // Report type distribution
-  const typeDistribution = await Report.aggregate([
-    { $match: query },
-    { $group: { _id: '$type', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
+  const [totalReports, readyReports, processingReports, errorReports, publicReports] = await Promise.all([
+    prisma.report.count({ where }),
+    prisma.report.count({ where: { ...where, status: 'ready' } }),
+    prisma.report.count({ where: { ...where, status: 'processing' } }),
+    prisma.report.count({ where: { ...where, status: 'error' } }),
+    prisma.report.count({ where: { ...where, isPublic: true } }),
   ]);
 
-  // Format distribution
-  const formatDistribution = await Report.aggregate([
-    { $match: query },
-    { $group: { _id: '$reportConfig.format', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]);
-
-  // Monthly report generation
-  const monthlyReports = await Report.aggregate([
-    { $match: query },
-    {
-      $group: {
-        _id: {
-          year: { $year: '$dateGenerated' },
-          month: { $month: '$dateGenerated' }
-        },
-        count: { $sum: 1 }
-      }
-    },
-    { $sort: { '_id.year': 1, '_id.month': 1 } },
-    { $limit: 12 }
+  const [typeDistribution, formatDistribution, monthlyReports] = await Promise.all([
+    prisma.report.groupBy({ by: ['type'], where, _count: { _all: true }, orderBy: { _count: { _all: 'desc' } } }),
+    prisma.report.groupBy({ by: ['reportConfig'], where, _count: { _all: true } }),
+    prisma.report.groupBy({ 
+      by: ['createdAt'], 
+      where: { 
+        ...where, 
+        createdAt: { 
+          gte: new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1)
+        }
+      }, 
+      _count: { _all: true },
+      orderBy: { createdAt: 'asc' }
+    })
   ]);
 
   res.json({
@@ -431,8 +304,17 @@ router.get('/stats/overview', authenticate, asyncHandler(async (req, res) => {
       errorReports,
       publicReports,
       typeDistribution,
-      formatDistribution,
-      monthlyReports,
+      formatDistribution: formatDistribution.map((item: any) => ({
+        _id: item.reportConfig?.format || 'unknown',
+        count: item._count._all
+      })),
+      monthlyReports: monthlyReports.map((item: any) => ({
+        _id: {
+          year: item.createdAt.getFullYear(),
+          month: item.createdAt.getMonth() + 1
+        },
+        count: item._count._all
+      }))
     },
   });
 }));

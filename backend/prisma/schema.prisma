@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  INDIVIDUAL
+  ENTERPRISE
+  ADMIN
+}
+
+enum StartupType {
+  INNOVATION
+  INCUBATION
+}
+
+enum StartupStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  DROPOUT
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id               String    @id @default(uuid())
+  fullName         String
+  email            String    @unique
+  username         String    @unique
+  passwordHash     String
+  role             UserRole  @default(INDIVIDUAL)
+  profileComplete  Boolean   @default(false)
+  isEmailVerified  Boolean   @default(false)
+  lastLogin        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  profile          Profile?
+  startups         Startup[]
+  events           Event[]   @relation("EventOwner")
+  documents        DocumentRef[]
+  sessions         Session[]
+  notifications    Notification[]
+  eventAttendances EventAttendee[] @relation("UserEventAttendance")
+  mentors          Mentor[]  @relation("UserMentors")
+  investors        Investor[] @relation("UserInvestors")
+  reports          Report[]  @relation("UserReports")
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  // Extend with profile fields as needed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Startup {
+  id                String            @id @default(uuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id])
+  name              String
+  founder           String
+  sector            String
+  type              StartupType
+  trlLevel          Int
+  email             String
+  status            StartupStatus     @default(PENDING)
+  applicationStatus ApplicationStatus @default(DRAFT)
+  submissionDate    DateTime          @default(now())
+
+  // Optional details used by frontend forms
+  description       String?
+  website           String?
+  linkedinProfile   String?
+  teamSize          Int?
+  foundedYear       Int?
+  location          String?
+  coFounderNames    String[]
+
+  // Incubation details
+  previouslyIncubated Boolean          @default(false)
+  incubatorName     String?
+  incubatorLocation String?
+  incubationDuration String?
+  incubatorType     String?
+  incubationMode    String?
+  supportsReceived  String[]
+
+  // Documentation references (URLs/paths)
+  aadhaarDoc        String?
+  incorporationCert String?
+  msmeCert          String?
+  dpiitCert         String?
+  mouPartnership    String?
+
+  // Pitch deck & traction
+  businessDocuments String[]
+  tractionDetails   String?
+  balanceSheet      String?
+
+  // Funding
+  fundingStage      String?
+  alreadyFunded     Boolean           @default(false)
+  fundingAmount     Int?
+  fundingSource     String?
+  fundingDate       DateTime?
+
+  // Milestones (JSON array of { id, name, description, targetDate, status, completedDate? })
+  milestones        Json?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Event {
+  id                String   @id @default(uuid())
+  userId            String
+  owner             User     @relation("EventOwner", fields: [userId], references: [id])
+  title             String
+  description       String
+  date              DateTime
+  time              String
+  location          String
+  category          String
+  status            String   @default("published")
+  isActive          Boolean  @default(true)
+  currentAttendees  Int      @default(0)
+  attendees         EventAttendee[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model EventAttendee {
+  eventId   String
+  userId    String
+  event     Event @relation(fields: [eventId], references: [id])
+  user      User  @relation("UserEventAttendance", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@id([eventId, userId])
+}
+
+model DocumentRef {
+  id           String   @id @default(uuid())
+  ownerId      String
+  owner        User     @relation(fields: [ownerId], references: [id])
+  name         String
+  type         String
+  size         Int
+  path         String?
+  description  String?
+  category     String?
+  isPublic     Boolean  @default(false)
+  originalName String?
+  mimeType     String?
+  tags         String[]
+  uploadedAt   DateTime @default(now())
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  sessionToken String   @unique
+  refreshToken String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String   @default("info")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+}
+
+model Mentor {
+  id              String   @id @default(uuid())
+  userId          String?
+  user            User?    @relation("UserMentors", fields: [userId], references: [id])
+  name            String
+  role            String
+  email           String   @unique
+  experience      String
+  bio             String
+  profilePicture  String?
+  rating          Float    @default(0)
+  phoneNumber     String?
+  linkedinProfile String?
+  website         String?
+  location        String?
+  expertise       String[]
+  sectors         String[]
+  availability    Json?
+  preferences     Json?
+  currentMentees  String[]
+  stats           Json?
+  isActive        Boolean  @default(true)
+  isVerified      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Investor {
+  id                String   @id @default(uuid())
+  userId            String?
+  user              User?    @relation("UserInvestors", fields: [userId], references: [id])
+  name              String
+  firm              String
+  email             String   @unique
+  phoneNumber       String
+  investmentRange   String
+  focusAreas        String[]
+  backgroundSummary String
+  profilePicture    String?
+  linkedinProfile   String?
+  website           String?
+  location          String?
+  position          String?
+  preferences       Json?
+  portfolio         Json?
+  stats             Json?
+  isActive          Boolean  @default(true)
+  isVerified        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Report {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation("UserReports", fields: [userId], references: [id])
+  name           String
+  type           String
+  dateGenerated  DateTime @default(now())
+  fileSize       String   @default("0 B")
+  status         String   @default("processing")
+  description    String?
+  parameters     Json?
+  filePath       String?
+  fileName       String?
+  mimeType       String?
+  reportConfig   Json?
+  processingInfo Json?
+  isPublic       Boolean  @default(false)
+  allowedUsers   String[]
+  tags           String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     String?
+  description String?
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

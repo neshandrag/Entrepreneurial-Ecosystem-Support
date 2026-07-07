@@ -1,65 +1,69 @@
 import { Event, CreateEventData, UpdateEventData } from '../types';
-import { mockEventsApi } from './mockEventsApi';
-
-// For now, use mock API. Replace with real API when backend is ready
-const USE_MOCK_API = true;
+import api from './api';
 
 class EventsApi {
   async getEvents(): Promise<Event[]> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.getEvents();
+    const response = await api.get('/events');
+    if (response.data.success) {
+      return response.data.data.events;
     }
-    // Real API implementation would go here
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch events');
   }
 
   async getUpcomingEvents(): Promise<Event[]> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.getUpcomingEvents();
+    const response = await api.get('/events?filter=upcoming');
+    if (response.data.success) {
+      return response.data.data.events;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch upcoming events');
   }
 
   async getCompletedEvents(): Promise<Event[]> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.getCompletedEvents();
+    const response = await api.get('/events?filter=completed');
+    if (response.data.success) {
+      return response.data.data.events;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch completed events');
   }
 
   async getEventById(id: string): Promise<Event> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.getEventById(id);
+    const response = await api.get(`/events/${id}`);
+    if (response.data.success) {
+      return response.data.data.event;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch event');
   }
 
   async createEvent(eventData: CreateEventData): Promise<Event> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.createEvent(eventData);
+    const response = await api.post('/events', eventData);
+    if (response.data.success) {
+      return response.data.data.event;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to create event');
   }
 
   async updateEvent(eventData: UpdateEventData): Promise<Event> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.updateEvent(eventData);
+    const { id, ...updateData } = eventData;
+    const response = await api.put(`/events/${id}`, updateData);
+    if (response.data.success) {
+      return response.data.data.event;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to update event');
   }
 
   async deleteEvent(id: string): Promise<void> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.deleteEvent(id);
+    const response = await api.delete(`/events/${id}`);
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to delete event');
     }
-    throw new Error('Real API not implemented yet');
   }
 
   async getEventCategories(): Promise<string[]> {
-    if (USE_MOCK_API) {
-      return mockEventsApi.getEventCategories();
+    const response = await api.get('/events/categories');
+    if (response.data.success) {
+      return response.data.data.categories;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch event categories');
   }
 }
 

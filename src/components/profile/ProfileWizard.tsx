@@ -8,13 +8,15 @@ import IncubationDetails from './steps/IncubationDetails';
 import Documentation from './steps/Documentation';
 import PitchDeckTraction from './steps/PitchDeckTraction';
 import FundingInfo from './steps/FundingInfo';
-import { Profile } from '../../types';
+import { Profile, FrontendStartupData } from '../../types'; // Import FrontendStartupData
 import { Building2 } from 'lucide-react';
+import { startupsApi } from '../../services/startupsApi'; // Import startupsApi
 
 const ProfileWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [profileData, setProfileData] = useState<Partial<Profile>>({});
-  const { updateUser } = useAuth();
+  const [startupId, setStartupId] = useState<string | undefined>(undefined);
+  const { user, updateUser } = useAuth();
   const navigate = useNavigate();
 
   const totalSteps = 6;
@@ -23,13 +25,82 @@ const ProfileWizard: React.FC = () => {
     setProfileData(prev => ({ ...prev, ...stepData }));
   };
 
-  const nextStep = () => {
+  const nextStep = async () => {
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
     } else {
-      // Complete profile
-      updateUser({ profileComplete: true });
-      navigate('/dashboard');
+      // This is the last step, submit the data to the backend
+      if (!user) {
+        console.error("User not logged in, cannot create startup profile.");
+        // Optionally, redirect to login or show an error
+        return;
+      }
+
+      try {
+        const startupPayload: FrontendStartupData = {
+          name: profileData.startupName || '',
+          founder: profileData.founderName || '',
+          sector: profileData.sector || '',
+          type: profileData.applicationType || 'innovation',
+          email: profileData.email || '',
+          description: profileData.description || '',
+          website: profileData.website || '',
+          linkedinProfile: profileData.linkedinProfile || '',
+          teamSize: profileData.teamSize || undefined,
+          foundedYear: profileData.foundedYear || undefined,
+          location: profileData.location || '',
+          trlLevel: profileData.trlLevel || 1, // Default TRL to 1 if not set
+          coFounderNames: profileData.coFounderNames || [],
+          applicationStatus: 'submitted', // Set initial application status
+          
+          // Incubation Details
+          previouslyIncubated: profileData.previouslyIncubated || false,
+          incubatorName: profileData.incubatorName || undefined,
+          incubatorLocation: profileData.incubatorLocation || undefined,
+          incubationDuration: profileData.incubationDuration || undefined,
+          incubatorType: profileData.incubatorType || undefined,
+          incubationMode: profileData.incubationMode || undefined,
+          supportsReceived: profileData.supportsReceived || undefined,
+
+          // Documentation (these fields would likely hold URLs/references after file uploads)
+          aadhaarDoc: profileData.aadhaarDoc || undefined,
+          incorporationCert: profileData.incorporationCert || undefined,
+          msmeCert: profileData.msmeCert || undefined,
+          dpiitCert: profileData.dpiitCert || undefined,
+          mouPartnership: profileData.mouPartnership || undefined,
+
+          // Pitch Deck & Traction
+          businessDocuments: profileData.businessDocuments || undefined,
+          tractionDetails: profileData.tractionDetails || undefined,
+          balanceSheet: profileData.balanceSheet || undefined,
+
+          // Funding Information
+          fundingStage: profileData.fundingStage || undefined,
+          alreadyFunded: profileData.alreadyFunded || false,
+          fundingAmount: profileData.fundingAmount || undefined,
+          fundingSource: profileData.fundingSource || undefined,
+          fundingDate: profileData.fundingDate || undefined,
+        };
+
+        // Create or Update Startup Profile
+        let createdStartup;
+        if (startupId) {
+          createdStartup = await startupsApi.updateStartupProfile(startupId, startupPayload);
+        } else {
+          createdStartup = await startupsApi.createStartupProfile(startupPayload);
+        }
+
+        setStartupId(createdStartup.id); // Save the new startup ID
+        
+        // Update user context to mark profile as complete and associate startupId
+        updateUser({ profileComplete: true, startupId: createdStartup.id });
+        navigate('/dashboard');
+
+      } catch (error) {
+        console.error("Error saving startup profile:", error);
+        // Display error message to the user
+        alert(`Failed to save profile: ${(error as Error).message}`);
+      }
     }
   };
 
@@ -84,4 +155,4 @@ const ProfileWizard: React.FC = () => {
   );
 };
 
-export default ProfileWizard;
+export default ProfileWizard; 

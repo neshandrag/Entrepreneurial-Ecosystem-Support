@@ -4,19 +4,21 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { connectDB } from './config/database';
+import { connectDB, setupGracefulShutdown } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
 
 // Import routes
 import authRoutes from './routes/auth';
+import eventRoutes from './routes/events';
+import documentRoutes from './routes/documents';
 import userRoutes from './routes/users';
 import startupRoutes from './routes/startups';
 import mentorRoutes from './routes/mentors';
 import investorRoutes from './routes/investors';
-import eventRoutes from './routes/events';
-import documentRoutes from './routes/documents';
 import reportRoutes from './routes/reports';
+import adminRoutes from './routes/admin';
+// import profileRoutes from './routes/profile'; // TODO: Decide if needed or merge with startup routes
 
 // Load environment variables
 dotenv.config();
@@ -24,7 +26,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
+// Connect to PostgreSQL only
 connectDB();
 
 // Security middleware
@@ -65,22 +67,23 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API routes
+// API routes (all migrated to Prisma)
 app.use('/api/auth', authRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/documents', documentRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/startups', startupRoutes);
 app.use('/api/mentors', mentorRoutes);
 app.use('/api/investors', investorRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/documents', documentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/admin', adminRoutes);
+// app.use('/api/profile', profileRoutes); // TODO: Decide if needed or merge with startup routes
 
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    message: 'CITBIF Backend API',
+    message: 'CITBIF Backend API (PostgreSQL only)',
     version: '1.0.0',
-    documentation: '/api/docs',
     health: '/health',
   });
 });
@@ -89,12 +92,14 @@ app.get('/', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
+// Setup graceful shutdown
+setupGracefulShutdown();
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN}`);
-  console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
 });
 
 export default app;

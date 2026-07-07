@@ -1,43 +1,45 @@
 import { Report, CreateReportData, UpdateReportData } from '../types';
-import { mockReportsApi } from './mockReportsApi';
-
-// For now, use mock API. Replace with real API when backend is ready
-const USE_MOCK_API = true;
+import api from './api';
 
 class ReportsApi {
   async getReports(): Promise<Report[]> {
-    if (USE_MOCK_API) {
-      return mockReportsApi.getReports();
+    const response = await api.get('/reports');
+    if (response.data.success) {
+      return response.data.data.reports;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch reports');
   }
 
   async getReportById(id: string): Promise<Report> {
-    if (USE_MOCK_API) {
-      return mockReportsApi.getReportById(id);
+    const response = await api.get(`/reports/${id}`);
+    if (response.data.success) {
+      return response.data.data.report;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch report');
   }
 
   async createReport(reportData: CreateReportData): Promise<Report> {
-    if (USE_MOCK_API) {
-      return mockReportsApi.createReport(reportData);
+    const response = await api.post('/reports', reportData);
+    if (response.data.success) {
+      return response.data.data.report;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to create report');
   }
 
   async updateReport(reportData: UpdateReportData): Promise<Report> {
-    if (USE_MOCK_API) {
-      return mockReportsApi.updateReport(reportData);
+    const { id, ...updateData } = reportData;
+    const response = await api.put(`/reports/${id}`, updateData);
+    if (response.data.success) {
+      return response.data.data.report;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to update report');
   }
 
   async deleteReport(id: string): Promise<void> {
-    if (USE_MOCK_API) {
-      return mockReportsApi.deleteReport(id);
+    const response = await api.delete(`/reports/${id}`);
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to delete report');
     }
-    throw new Error('Real API not implemented yet');
   }
 }
 

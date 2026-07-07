@@ -1,5 +1,6 @@
 // Re-export all types from models for easy access
 export * from '../models/User';
+export * from '../models/Admin';
 export * from '../models/Profile';
 export * from '../models/Startup';
 export * from '../models/Mentor';
@@ -9,7 +10,7 @@ export * from '../models/Document';
 export * from '../models/Report';
 
 // Additional utility types
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
@@ -34,8 +35,36 @@ export interface PaginationQuery {
   search?: string;
 }
 
+import { Request } from 'express';
+import { IUser } from '../models/User';
+import { IAdmin } from '../models/Admin';
+
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: IUser;
+  admin?: IAdmin;
+  userId?: string;
+  adminId?: string;
+}
+
+// User roles and permissions
+export type UserRole = 'INDIVIDUAL' | 'ENTERPRISE' | 'ADMIN';
+export type AdminLevel = 'super_admin' | 'admin' | 'moderator';
+
+// JWT Payload types
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  role: UserRole;
+  adminLevel?: AdminLevel;
+  iat: number;
+  exp: number;
+}
+
+export interface RefreshTokenPayload {
+  userId: string;
+  tokenId: string;
+  iat: number;
+  exp: number;
 }
 
 export interface FileUpload {
@@ -62,7 +91,7 @@ export interface NotificationData {
   type: 'info' | 'success' | 'warning' | 'error';
   userId: string;
   read?: boolean;
-  data?: any;
+  data?: unknown;
 }
 
 export interface StatsOverview {

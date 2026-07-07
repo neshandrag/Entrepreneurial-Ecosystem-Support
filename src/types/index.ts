@@ -6,11 +6,14 @@ export interface User {
   role: 'individual' | 'enterprise' | 'admin';
   profileComplete: boolean;
   createdAt: string;
+  startupId?: string; // Add startupId to User
 }
 
+export type TRLLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
 export interface Profile {
-  id: string;
-  userId: string;
+  id?: string; // Profile might not have an ID until saved
+  userId?: string;
   // Step 1: Personal Information
   fullName: string;
   email: string;
@@ -35,7 +38,7 @@ export interface Profile {
   incubationMode?: 'online' | 'offline' | 'hybrid';
   supportsReceived?: string[];
   
-  // Step 4: Documentation
+  // Step 4: Documentation (assuming these are file paths/URLs after upload)
   aadhaarDoc: string; // required
   incorporationCert?: string;
   msmeCert?: string;
@@ -43,9 +46,9 @@ export interface Profile {
   mouPartnership?: string;
   
   // Step 5: Pitch Deck & Traction
-  businessDocuments?: string[];
-  tractionDetails?: string[];
-  balanceSheet?: string;
+  businessDocuments?: string[]; // Array of document URLs/ids
+  tractionDetails?: string; // This could be a text field for details
+  balanceSheet?: string; // Document URL/id
   
   // Step 6: Funding Information
   fundingStage: string;
@@ -53,6 +56,71 @@ export interface Profile {
   fundingAmount?: number;
   fundingSource?: string;
   fundingDate?: string;
+
+  // TRL Level (assuming this is determined or selected in a step)
+  trlLevel: TRLLevel;
+}
+
+// This interface mirrors the CreateStartupPayload from startupsApi.ts
+// It represents the data sent from the frontend to create a new startup.
+export interface FrontendStartupData {
+  name: string;
+  founder: string;
+  sector: string;
+  type: 'innovation' | 'incubation';
+  email: string;
+  description?: string;
+  website?: string;
+  linkedinProfile?: string;
+  teamSize?: number;
+  foundedYear?: number;
+  location?: string;
+  trlLevel: TRLLevel;
+  coFounderNames?: string[];
+  // Application specific fields that might be set initially
+  applicationStatus: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
+  
+  // From IncubationDetails
+  previouslyIncubated?: boolean;
+  incubatorName?: string;
+  incubatorLocation?: string;
+  incubationDuration?: string;
+  incubatorType?: string;
+  incubationMode?: 'online' | 'offline' | 'hybrid';
+  supportsReceived?: string[];
+
+  // From Documentation (these would likely be references to uploaded files)
+  aadhaarDoc?: string;
+  incorporationCert?: string;
+  msmeCert?: string;
+  dpiitCert?: string;
+  mouPartnership?: string;
+
+  // From Pitch Deck & Traction
+  businessDocuments?: string[];
+  tractionDetails?: string;
+  balanceSheet?: string;
+
+  // From FundingInfo
+  fundingStage?: string;
+  alreadyFunded?: boolean;
+  fundingAmount?: number;
+  fundingSource?: string;
+  fundingDate?: string;
+}
+
+// Existing interfaces (Startup is now redundant if FrontendStartupData is used for creation)
+// I'll keep it for now but it might be removed later if it causes confusion.
+export interface Startup {
+  id: string;
+  name: string;
+  founder: string;
+  sector: string;
+  type: 'innovation' | 'incubation';
+  status: 'pending' | 'active' | 'completed' | 'dropout';
+  trlLevel: TRLLevel;
+  email: string;
+  submissionDate: string;
 }
 
 export interface Mentor {
@@ -126,7 +194,7 @@ export interface CreateReportData {
   type: string;
   dateGenerated: string;
   fileSize: string;
-  status: 'ready' | 'processing' | 'error';
+  status: 'ready' | 'processing' | 'error'
 }
 
 export interface UpdateReportData extends Partial<CreateReportData> {
@@ -189,26 +257,3 @@ export interface UpdateEventData extends Partial<CreateEventData> {
   id: string;
 }
 
-export interface Document {
-  id: string;
-  name: string;
-  location: string;
-  owner: string;
-  fileSize: string;
-  uploadDate: string;
-  type: string;
-}
-
-export type TRLLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-
-export interface Startup {
-  id: string;
-  name: string;
-  founder: string;
-  sector: string;
-  type: 'innovation' | 'incubation';
-  status: 'pending' | 'active' | 'completed' | 'dropout';
-  trlLevel: TRLLevel;
-  email: string;
-  submissionDate: string;
-}

@@ -1,9 +1,9 @@
-import express from 'express';
+import express, { Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { Document } from '../models/Document';
-import { authenticate, authorize, optionalAuth } from '../middleware/auth';
+import prisma from '../config/prisma';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { validate, validateQuery } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { config } from '../config/env';
@@ -26,14 +26,14 @@ const storage = multer.diskStorage({
   }
 });
 
-const fileFilter = (req: any, file: any, cb: any) => {
+const fileFilter: multer.Options['fileFilter'] = (req, file, cb) => {
   const allowedTypes = config.upload.allowedTypes;
   const fileExt = path.extname(file.originalname).toLowerCase().substring(1);
   
   if (allowedTypes.includes(fileExt)) {
     cb(null, true);
   } else {
-    cb(new Error(`File type .${fileExt} is not allowed. Allowed types: ${allowedTypes.join(', ')}`), false);
+    cb(new Error(`File type .${fileExt} is not allowed. Allowed types: ${allowedTypes.join(', ')}`));
   }
 };
 
@@ -76,63 +76,71 @@ const getDocumentsQuerySchema = Joi.object({
 // @route   GET /api/documents
 // @desc    Get all documents
 // @access  Private
-router.get('/', authenticate, validateQuery(getDocumentsQuerySchema), asyncHandler(async (req, res) => {
-  const { page, limit, category, type, isPublic, search, sortBy, sortOrder } = req.query as any;
+router.get('/', authenticate, validateQuery(getDocumentsQuerySchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const query = req.query as {
+    page?: string;
+    limit?: string;
+    category?: string;
+    type?: string;
+    isPublic?: string;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  };
+  
+  const page = parseInt(query.page || '1');
+  const limit = parseInt(query.limit || '10');
+  const { category, type, isPublic, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
   const skip = (page - 1) * limit;
 
-  // Build query
-  const query: any = {};
-  
-  if (category) {
-    query.category = category;
-  }
-  
-  if (type) {
-    query.type = { $regex: type, $options: 'i' };
-  }
-  
-  if (typeof isPublic === 'boolean') {
-    query.isPublic = isPublic;
-  }
-  
+  // Type definitions for Prisma where clause
+  type DocumentWhere = {
+    category?: string;
+    type?: { contains: string; mode: 'insensitive' };
+    isPublic?: boolean;
+    OR?: Array<{
+      name?: { contains: string; mode: 'insensitive' };
+      description?: { contains: string; mode: 'insensitive' };
+      tags?: { hasSome: string[] };
+      ownerId?: string;
+      isPublic?: boolean;
+    }>;
+    ownerId?: string;
+  };
+
+  const where: DocumentWhere = {};
+  if (category) where.category = String(category);
+  if (type) where.type = { contains: String(type), mode: 'insensitive' };
+  if (typeof isPublic === 'string') where.isPublic = isPublic === 'true';
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
-      { tags: { $in: [new RegExp(search, 'i')] } },
+    where.OR = [
+      { name: { contains: String(search), mode: 'insensitive' } },
+      { description: { contains: String(search), mode: 'insensitive' } },
+      { tags: { hasSome: [String(search)] } },
     ];
   }
-
   // If not admin, only show user's documents or public documents
-  if (req.user.role !== 'admin') {
-    query.$or = [
-      { userId: req.user._id },
-      { isPublic: true }
-    ];
+  if (req.user && req.user.role !== 'ADMIN') {
+    where.OR = [{ ownerId: req.user.id }, { isPublic: true }];
   }
 
-  // Build sort object
-  const sort: any = {};
-  sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+  const orderBy = { [String(sortBy)]: String(sortOrder) as 'asc' | 'desc' };
 
-  const documents = await Document.find(query)
-    .populate('userId', 'fullName email username')
-    .sort(sort)
-    .skip(skip)
-    .limit(limit);
-
-  const total = await Document.countDocuments(query);
+  const [documents, total] = await Promise.all([
+    prisma.documentRef.findMany({ where, orderBy, skip, take: Number(limit) }),
+    prisma.documentRef.count({ where }),
+  ]);
 
   res.json({
     success: true,
     data: {
       documents,
       pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
         totalDocuments: total,
-        hasNext: page < Math.ceil(total / limit),
-        hasPrev: page > 1,
+        hasNext: Number(page) < Math.ceil(total / Number(limit)),
+        hasPrev: Number(page) > 1,
       },
     },
   });
@@ -141,223 +149,142 @@ router.get('/', authenticate, validateQuery(getDocumentsQuerySchema), asyncHandl
 // @route   POST /api/documents/upload
 // @desc    Upload document
 // @access  Private
-router.post('/upload', authenticate, upload.single('file'), validate(createDocumentSchema), asyncHandler(async (req, res) => {
+router.post('/upload', authenticate, upload.single('file'), validate(createDocumentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      message: 'No file uploaded',
-    });
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
+  }
+
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'User not authenticated' });
   }
 
   const { name, description, category, isPublic, tags } = req.body;
-
-  // Calculate file size
   const fileSizeInBytes = req.file.size;
-  const fileSizeInMB = (fileSizeInBytes / (1024 * 1024)).toFixed(2);
-  const fileSize = `${fileSizeInMB} MB`;
+  const ext = path.extname(req.file.originalname).toLowerCase().substring(1);
 
-  const document = new Document({
-    name: name || req.file.originalname,
-    location: req.file.path,
-    owner: req.user.fullName,
-    fileSize,
-    uploadDate: new Date(),
-    type: path.extname(req.file.originalname).toLowerCase().substring(1),
-    userId: req.user._id,
-    originalName: req.file.originalname,
-    mimeType: req.file.mimetype,
-    description,
-    category,
-    isPublic: isPublic === 'true',
-    status: 'ready',
-    tags: tags ? tags.split(',') : [],
-  });
-
-  await document.save();
-
-  // Populate user data
-  await document.populate('userId', 'fullName email username');
-
-  res.status(201).json({
-    success: true,
-    message: 'Document uploaded successfully',
+  const doc = await prisma.documentRef.create({
     data: {
-      document,
+      ownerId: req.user.id,
+      name: name || req.file.originalname,
+      type: ext,
+      size: fileSizeInBytes,
+      path: req.file.path,
+      description: description || null,
+      category,
+      isPublic: String(isPublic) === 'true',
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      tags: tags ? String(tags).split(',') : [],
     },
   });
+
+  return res.status(201).json({ success: true, message: 'Document uploaded successfully', data: { document: doc } });
 }));
 
 // @route   GET /api/documents/:id
 // @desc    Get document by ID
 // @access  Private
-router.get('/:id', authenticate, asyncHandler(async (req, res) => {
-  const document = await Document.findById(req.params.id)
-    .populate('userId', 'fullName email username');
-  
+router.get('/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const document = await prisma.documentRef.findUnique({ where: { id: req.params.id } });
   if (!document) {
-    return res.status(404).json({
-      success: false,
-      message: 'Document not found',
-    });
+    return res.status(404).json({ success: false, message: 'Document not found' });
   }
 
-  // Check if user can access this document
-  if (req.user.role !== 'admin' && 
-      req.user._id.toString() !== document.userId._id.toString() && 
-      !document.isPublic) {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied',
-    });
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'User not authenticated' });
   }
 
-  res.json({
-    success: true,
-    data: {
-      document,
-    },
-  });
+  if (req.user.role !== 'admin' && req.user.id !== document.ownerId && !document.isPublic) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  return res.json({ success: true, data: { document } });
 }));
 
 // @route   GET /api/documents/:id/download
 // @desc    Download document
 // @access  Private
-router.get('/:id/download', authenticate, asyncHandler(async (req, res) => {
-  const document = await Document.findById(req.params.id);
-  
+router.get('/:id/download', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const document = await prisma.documentRef.findUnique({ where: { id: req.params.id } });
   if (!document) {
-    return res.status(404).json({
-      success: false,
-      message: 'Document not found',
-    });
+    return res.status(404).json({ success: false, message: 'Document not found' });
   }
 
-  // Check if user can access this document
-  if (req.user.role !== 'admin' && 
-      req.user._id.toString() !== document.userId.toString() && 
-      !document.isPublic) {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied',
-    });
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'User not authenticated' });
   }
 
-  // Check if file exists
-  if (!fs.existsSync(document.location)) {
-    return res.status(404).json({
-      success: false,
-      message: 'File not found on server',
-    });
+  if (req.user.role !== 'admin' && req.user.id !== document.ownerId && !document.isPublic) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  res.download(document.location, document.originalName);
+  if (!document.path || !fs.existsSync(document.path)) {
+    return res.status(404).json({ success: false, message: 'File not found on server' });
+  }
+
+  return res.download(document.path, document.originalName || path.basename(document.path));
 }));
 
 // @route   PUT /api/documents/:id
 // @desc    Update document
 // @access  Private
-router.put('/:id', authenticate, validate(updateDocumentSchema), asyncHandler(async (req, res) => {
-  const document = await Document.findById(req.params.id);
-  
+router.put('/:id', authenticate, validate(updateDocumentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const document = await prisma.documentRef.findUnique({ where: { id: req.params.id } });
   if (!document) {
-    return res.status(404).json({
-      success: false,
-      message: 'Document not found',
-    });
+    return res.status(404).json({ success: false, message: 'Document not found' });
   }
 
-  // Check if user can update this document
-  if (req.user.role !== 'admin' && req.user._id.toString() !== document.userId.toString()) {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied',
-    });
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'User not authenticated' });
   }
 
-  // Update document
-  Object.assign(document, req.body);
-  await document.save();
+  if (req.user.role !== 'admin' && req.user.id !== document.ownerId) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
 
-  // Populate user data
-  await document.populate('userId', 'fullName email username');
-
-  res.json({
-    success: true,
-    message: 'Document updated successfully',
-    data: {
-      document,
-    },
-  });
+  const updated = await prisma.documentRef.update({ where: { id: req.params.id }, data: req.body });
+  return res.json({ success: true, message: 'Document updated successfully', data: { document: updated } });
 }));
 
 // @route   DELETE /api/documents/:id
 // @desc    Delete document
 // @access  Private
-router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
-  const document = await Document.findById(req.params.id);
-  
+router.delete('/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const document = await prisma.documentRef.findUnique({ where: { id: req.params.id } });
   if (!document) {
-    return res.status(404).json({
-      success: false,
-      message: 'Document not found',
-    });
+    return res.status(404).json({ success: false, message: 'Document not found' });
   }
 
-  // Check if user can delete this document
-  if (req.user.role !== 'admin' && req.user._id.toString() !== document.userId.toString()) {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied',
-    });
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'User not authenticated' });
   }
 
-  // Delete file from filesystem
-  if (fs.existsSync(document.location)) {
-    fs.unlinkSync(document.location);
+  if (req.user.role !== 'admin' && req.user.id !== document.ownerId) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  // Delete document record
-  await Document.findByIdAndDelete(req.params.id);
+  if (document.path && fs.existsSync(document.path)) {
+    fs.unlinkSync(document.path);
+  }
 
-  res.json({
-    success: true,
-    message: 'Document deleted successfully',
-  });
+  await prisma.documentRef.delete({ where: { id: req.params.id } });
+  return res.json({ success: true, message: 'Document deleted successfully' });
 }));
 
 // @route   GET /api/documents/stats/overview
 // @desc    Get document statistics overview
 // @access  Private
-router.get('/stats/overview', authenticate, asyncHandler(async (req, res) => {
-  const query: any = {};
-  
-  // If not admin, only show user's documents
-  if (req.user.role !== 'admin') {
-    query.userId = req.user._id;
-  }
+router.get('/stats/overview', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const where: { ownerId?: string } = {};
+  if (req.user && req.user.role !== 'admin') where.ownerId = req.user.id;
 
-  const totalDocuments = await Document.countDocuments(query);
-  const publicDocuments = await Document.countDocuments({ ...query, isPublic: true });
-  const privateDocuments = await Document.countDocuments({ ...query, isPublic: false });
-
-  // Category distribution
-  const categoryDistribution = await Document.aggregate([
-    { $match: query },
-    { $group: { _id: '$category', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]);
-
-  // File type distribution
-  const typeDistribution = await Document.aggregate([
-    { $match: query },
-    { $group: { _id: '$type', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]);
-
-  // Total storage used
-  const storageStats = await Document.aggregate([
-    { $match: query },
-    { $group: { _id: null, totalSize: { $sum: '$fileSizeBytes' } } }
+  const [totalDocuments, publicDocuments, privateDocuments, categoryAgg, typeAgg, storageSum] = await Promise.all([
+    prisma.documentRef.count({ where }),
+    prisma.documentRef.count({ where: { ...where, isPublic: true } }),
+    prisma.documentRef.count({ where: { ...where, isPublic: false } }),
+    prisma.documentRef.groupBy({ by: ['category'], where, _count: { _all: true }, orderBy: { _count: { _all: 'desc' } } }),
+    prisma.documentRef.groupBy({ by: ['type'], where, _count: { _all: true }, orderBy: { _count: { _all: 'desc' } } }),
+    prisma.documentRef.aggregate({ _sum: { size: true }, where }),
   ]);
 
   res.json({
@@ -366,9 +293,9 @@ router.get('/stats/overview', authenticate, asyncHandler(async (req, res) => {
       totalDocuments,
       publicDocuments,
       privateDocuments,
-      categoryDistribution,
-      typeDistribution,
-      totalStorageUsed: storageStats[0]?.totalSize || 0,
+      categoryDistribution: categoryAgg,
+      typeDistribution: typeAgg,
+      totalStorageUsed: storageSum._sum.size || 0,
     },
   });
 }));

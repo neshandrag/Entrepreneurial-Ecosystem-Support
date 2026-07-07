@@ -1,43 +1,45 @@
 import { Document, CreateDocumentData, UpdateDocumentData } from '../types';
-import { mockDocumentsApi } from './mockDocumentsApi';
-
-// For now, use mock API. Replace with real API when backend is ready
-const USE_MOCK_API = true;
+import api from './api';
 
 class DocumentsApi {
   async getDocuments(): Promise<Document[]> {
-    if (USE_MOCK_API) {
-      return mockDocumentsApi.getDocuments();
+    const response = await api.get('/documents');
+    if (response.data.success) {
+      return response.data.data.documents;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch documents');
   }
 
   async getDocumentById(id: string): Promise<Document> {
-    if (USE_MOCK_API) {
-      return mockDocumentsApi.getDocumentById(id);
+    const response = await api.get(`/documents/${id}`);
+    if (response.data.success) {
+      return response.data.data.document;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch document');
   }
 
   async createDocument(documentData: CreateDocumentData): Promise<Document> {
-    if (USE_MOCK_API) {
-      return mockDocumentsApi.createDocument(documentData);
+    const response = await api.post('/documents', documentData);
+    if (response.data.success) {
+      return response.data.data.document;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to create document');
   }
 
   async updateDocument(documentData: UpdateDocumentData): Promise<Document> {
-    if (USE_MOCK_API) {
-      return mockDocumentsApi.updateDocument(documentData);
+    const { id, ...updateData } = documentData;
+    const response = await api.put(`/documents/${id}`, updateData);
+    if (response.data.success) {
+      return response.data.data.document;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to update document');
   }
 
   async deleteDocument(id: string): Promise<void> {
-    if (USE_MOCK_API) {
-      return mockDocumentsApi.deleteDocument(id);
+    const response = await api.delete(`/documents/${id}`);
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to delete document');
     }
-    throw new Error('Real API not implemented yet');
   }
 }
 

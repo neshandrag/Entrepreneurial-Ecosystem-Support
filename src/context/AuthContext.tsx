@@ -2,12 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { authApi } from '../services/api';
 import { useNotifications } from './NotificationsContext';
-import { useApplications } from './ApplicationsContext';
+import api from '../services/api';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ redirectUrl?: string }>;
   signup: (data: SignupData) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
@@ -29,7 +29,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   // Get contexts - these will be undefined if not wrapped in their providers
   let notificationsContext;
-  let applicationsContext;
   try {
     notificationsContext = useNotifications();
   } catch {
@@ -37,12 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     notificationsContext = null;
   }
   
-  try {
-    applicationsContext = useApplications();
-  } catch {
-    // ApplicationsProvider not available, continue without applications
-    applicationsContext = null;
-  }
+  // Removed applicationsContext as startup creation is now handled by ProfileWizard
 
   useEffect(() => {
     console.log('AuthContext useEffect running');
@@ -62,12 +56,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('token');
       }
     }
-    
-    setIsLoading(false);
-    console.log('AuthContext loading set to false');
-  }, []);
+  };
 
-  const login = async (email: string, _password: string) => {
+  const login = async (email: string, password: string): Promise<{ redirectUrl?: string }> => {
     setIsLoading(true);
     
     try {

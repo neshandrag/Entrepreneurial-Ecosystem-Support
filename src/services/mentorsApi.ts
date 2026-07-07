@@ -1,43 +1,45 @@
 import { Mentor, CreateMentorData, UpdateMentorData } from '../types';
-import { mockMentorsApi } from './mockMentorsApi';
-
-// For now, use mock API. Replace with real API when backend is ready
-const USE_MOCK_API = true;
+import api from './api';
 
 class MentorsApi {
   async getMentors(): Promise<Mentor[]> {
-    if (USE_MOCK_API) {
-      return mockMentorsApi.getMentors();
+    const response = await api.get('/mentors');
+    if (response.data.success) {
+      return response.data.data.mentors;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch mentors');
   }
 
   async getMentorById(id: string): Promise<Mentor> {
-    if (USE_MOCK_API) {
-      return mockMentorsApi.getMentorById(id);
+    const response = await api.get(`/mentors/${id}`);
+    if (response.data.success) {
+      return response.data.data.mentor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch mentor');
   }
 
   async createMentor(mentorData: CreateMentorData): Promise<Mentor> {
-    if (USE_MOCK_API) {
-      return mockMentorsApi.createMentor(mentorData);
+    const response = await api.post('/mentors', mentorData);
+    if (response.data.success) {
+      return response.data.data.mentor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to create mentor');
   }
 
   async updateMentor(mentorData: UpdateMentorData): Promise<Mentor> {
-    if (USE_MOCK_API) {
-      return mockMentorsApi.updateMentor(mentorData);
+    const { id, ...updateData } = mentorData;
+    const response = await api.put(`/mentors/${id}`, updateData);
+    if (response.data.success) {
+      return response.data.data.mentor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to update mentor');
   }
 
   async deleteMentor(id: string): Promise<void> {
-    if (USE_MOCK_API) {
-      return mockMentorsApi.deleteMentor(id);
+    const response = await api.delete(`/mentors/${id}`);
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to delete mentor');
     }
-    throw new Error('Real API not implemented yet');
   }
 }
 

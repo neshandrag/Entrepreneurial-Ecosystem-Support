@@ -1,9 +1,11 @@
-import express from 'express';
-import { Mentor } from '../models/Mentor';
-import { authenticate, authorize, optionalAuth } from '../middleware/auth';
+import express, { Request, Response } from 'express';
+import prisma from '../config/prisma';
+import { authenticate, optionalAuth, AuthRequest, requireAdmin } from '../middleware/auth';
 import { validate, validateQuery } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import Joi from 'joi';
+
+type OptionalAuthRequest = Request & { user?: any };
 
 const router = express.Router();
 
@@ -85,113 +87,82 @@ const getMentorsQuerySchema = Joi.object({
 // @route   GET /api/mentors
 // @desc    Get all mentors
 // @access  Public
-router.get('/', optionalAuth, validateQuery(getMentorsQuerySchema), asyncHandler(async (req, res) => {
-  const { page, limit, sectors, expertise, location, isActive, isVerified, minRating, search, sortBy, sortOrder } = req.query as any;
+router.get('/', optionalAuth, validateQuery(getMentorsQuerySchema), asyncHandler(async (req: OptionalAuthRequest, res: Response) => {
+  // Extract query params with proper defaults
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const sectors = req.query.sectors;
+  const expertise = req.query.expertise;
+  const location = req.query.location;
+  const isActive = req.query.isActive;
+  const isVerified = req.query.isVerified;
+  const minRating = req.query.minRating;
+  const search = req.query.search;
+  const sortBy = String(req.query.sortBy || 'createdAt');
+  const sortOrder = String(req.query.sortOrder || 'desc');
+  
   const skip = (page - 1) * limit;
 
-  // Build query
-  const query: any = {};
-  
-  if (sectors) {
-    query.sectors = { $in: sectors.split(',') };
-  }
-  
-  if (expertise) {
-    query.expertise = { $in: expertise.split(',') };
-  }
-  
-  if (location) {
-    query.location = { $regex: location, $options: 'i' };
-  }
-  
-  if (typeof isActive === 'boolean') {
-    query.isActive = isActive;
-  }
-  
-  if (typeof isVerified === 'boolean') {
-    query.isVerified = isVerified;
-  }
-  
-  if (minRating) {
-    query.rating = { $gte: minRating };
-  }
-  
+  const where: any = {};
+  if (sectors) where.sectors = { hasSome: String(sectors).split(',') };
+  if (expertise) where.expertise = { hasSome: String(expertise).split(',') };
+  if (location) where.location = { contains: String(location), mode: 'insensitive' };
+  if (typeof isActive === 'boolean') where.isActive = isActive;
+  if (typeof isVerified === 'boolean') where.isVerified = isVerified;
+  if (minRating) where.rating = { gte: Number(minRating) };
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { role: { $regex: search, $options: 'i' } },
-      { bio: { $regex: search, $options: 'i' } },
-      { experience: { $regex: search, $options: 'i' } },
+    where.OR = [
+      { name: { contains: String(search), mode: 'insensitive' } },
+      { role: { contains: String(search), mode: 'insensitive' } },
+      { bio: { contains: String(search), mode: 'insensitive' } },
+      { experience: { contains: String(search), mode: 'insensitive' } },
     ];
   }
-
-  // Only show active mentors to public
-  if (!req.user || req.user.role !== 'admin') {
-    query.isActive = true;
+  if (!req.user || req.user.role !== 'ADMIN') {
+    where.isActive = true;
   }
+  
+  // Build orderBy with proper validation
+  const validSortFields = ['createdAt', 'name', 'rating'];
+  const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+  const orderBy = [{ [actualSortBy]: sortOrder }];
 
-  // Build sort object
-  const sort: any = {};
-  sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+  const [mentors, total] = await Promise.all([
+    prisma.mentor.findMany({ where, orderBy, skip, take: limit }),
+    prisma.mentor.count({ where }),
+  ]);
 
-  const mentors = await Mentor.find(query)
-    .sort(sort)
-    .skip(skip)
-    .limit(limit);
-
-  const total = await Mentor.countDocuments(query);
-
-  res.json({
-    success: true,
-    data: {
-      mentors,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalMentors: total,
-        hasNext: page < Math.ceil(total / limit),
-        hasPrev: page > 1,
-      },
-    },
+  return res.json({ 
+    success: true, 
+    data: { 
+      mentors, 
+      pagination: { 
+        currentPage: page, 
+        totalPages: Math.ceil(total / limit), 
+        totalMentors: total, 
+        hasNext: page < Math.ceil(total / limit), 
+        hasPrev: page > 1 
+      } 
+    } 
   });
 }));
 
 // @route   POST /api/mentors
 // @desc    Create mentor profile
 // @access  Private
-router.post('/', authenticate, validate(createMentorSchema), asyncHandler(async (req, res) => {
-  // Check if email already exists
-  const existingMentor = await Mentor.findOne({ email: req.body.email });
-  if (existingMentor) {
-    return res.status(400).json({
-      success: false,
-      message: 'Mentor with this email already exists',
-    });
-  }
+router.post('/', authenticate, validate(createMentorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const existingMentor = await prisma.mentor.findFirst({ where: { email: req.body.email } });
+  if (existingMentor) return res.status(400).json({ success: false, message: 'Mentor with this email already exists' });
 
-  const mentorData = {
-    ...req.body,
-    userId: req.user._id,
-  };
-
-  const mentor = new Mentor(mentorData);
-  await mentor.save();
-
-  res.status(201).json({
-    success: true,
-    message: 'Mentor profile created successfully',
-    data: {
-      mentor,
-    },
-  });
+  const mentor = await prisma.mentor.create({ data: { ...req.body, userId: req.user!.id, expertise: req.body.expertise || [], sectors: req.body.sectors || [] } });
+  return res.status(201).json({ success: true, message: 'Mentor profile created successfully', data: { mentor } });
 }));
 
 // @route   GET /api/mentors/:id
 // @desc    Get mentor by ID
 // @access  Public
-router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
-  const mentor = await Mentor.findById(req.params.id);
-  
+router.get('/:id', optionalAuth, asyncHandler(async (req: OptionalAuthRequest, res: Response) => {
+  const mentor = await prisma.mentor.findUnique({ where: { id: req.params.id } });
   if (!mentor) {
     return res.status(404).json({
       success: false,
@@ -200,7 +171,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   }
 
   // Only show active mentors to public
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || req.user.role !== 'ADMIN') {
     if (!mentor.isActive) {
       return res.status(403).json({
         success: false,
@@ -209,7 +180,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
     }
   }
 
-  res.json({
+  return res.json({
     success: true,
     data: {
       mentor,
@@ -220,9 +191,8 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
 // @route   PUT /api/mentors/:id
 // @desc    Update mentor
 // @access  Private
-router.put('/:id', authenticate, validate(updateMentorSchema), asyncHandler(async (req, res) => {
-  const mentor = await Mentor.findById(req.params.id);
-  
+router.put('/:id', authenticate, validate(updateMentorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const mentor = await prisma.mentor.findUnique({ where: { id: req.params.id } });
   if (!mentor) {
     return res.status(404).json({
       success: false,
@@ -231,7 +201,7 @@ router.put('/:id', authenticate, validate(updateMentorSchema), asyncHandler(asyn
   }
 
   // Check if user can update this mentor
-  if (req.user.role !== 'admin' && req.user._id.toString() !== mentor.userId?.toString()) {
+  if (req.user!.role !== 'ADMIN' && req.user!.id !== (mentor.userId || '')) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -240,34 +210,19 @@ router.put('/:id', authenticate, validate(updateMentorSchema), asyncHandler(asyn
 
   // Check if email is being changed and if it's already taken
   if (req.body.email && req.body.email !== mentor.email) {
-    const existingMentor = await Mentor.findOne({ email: req.body.email });
-    if (existingMentor) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email already exists',
-      });
-    }
+    const existingMentor = await prisma.mentor.findFirst({ where: { email: req.body.email } });
+    if (existingMentor) return res.status(400).json({ success: false, message: 'Email already exists' });
   }
 
-  // Update mentor
-  Object.assign(mentor, req.body);
-  await mentor.save();
-
-  res.json({
-    success: true,
-    message: 'Mentor updated successfully',
-    data: {
-      mentor,
-    },
-  });
+  const updated = await prisma.mentor.update({ where: { id: req.params.id }, data: req.body });
+  return res.json({ success: true, message: 'Mentor updated successfully', data: { mentor: updated } });
 }));
 
 // @route   DELETE /api/mentors/:id
 // @desc    Delete mentor
 // @access  Private
-router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
-  const mentor = await Mentor.findById(req.params.id);
-  
+router.delete('/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const mentor = await prisma.mentor.findUnique({ where: { id: req.params.id } });
   if (!mentor) {
     return res.status(404).json({
       success: false,
@@ -276,16 +231,16 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Check if user can delete this mentor
-  if (req.user.role !== 'admin' && req.user._id.toString() !== mentor.userId?.toString()) {
+  if (req.user!.role !== 'ADMIN' && req.user!.id !== (mentor.userId || '')) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
     });
   }
 
-  await Mentor.findByIdAndDelete(req.params.id);
+  await prisma.mentor.delete({ where: { id: req.params.id } });
 
-  res.json({
+  return res.json({
     success: true,
     message: 'Mentor deleted successfully',
   });
@@ -294,49 +249,18 @@ router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
 // @route   GET /api/mentors/stats/overview
 // @desc    Get mentor statistics overview
 // @access  Public
-router.get('/stats/overview', asyncHandler(async (req, res) => {
-  const totalMentors = await Mentor.countDocuments();
-  const activeMentors = await Mentor.countDocuments({ isActive: true });
-  const verifiedMentors = await Mentor.countDocuments({ isVerified: true });
-  const availableMentors = await Mentor.countDocuments({ 
-    isActive: true,
-    $expr: { $lt: ['$currentMentees.length', '$preferences.maxMentees'] }
-  });
-
-  // Expertise distribution
-  const expertiseDistribution = await Mentor.aggregate([
-    { $unwind: '$expertise' },
-    { $group: { _id: '$expertise', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 10 }
+router.get('/stats/overview', asyncHandler(async (_req: Request, res: Response) => {
+  const [totalMentors, activeMentors, verifiedMentors] = await Promise.all([
+    prisma.mentor.count(),
+    prisma.mentor.count({ where: { isActive: true } }),
+    prisma.mentor.count({ where: { isVerified: true } }),
   ]);
 
-  // Sector distribution
-  const sectorDistribution = await Mentor.aggregate([
-    { $unwind: '$sectors' },
-    { $group: { _id: '$sectors', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 10 }
-  ]);
+  const expertiseDistribution = await prisma.mentor.groupBy({ by: ['expertise'], _count: { _all: true } });
+  const sectorDistribution = await prisma.mentor.groupBy({ by: ['sectors'], _count: { _all: true } });
+  const ratingDistribution = await prisma.mentor.groupBy({ by: ['rating'], _count: { _all: true }, orderBy: { rating: 'asc' } });
 
-  // Rating distribution
-  const ratingDistribution = await Mentor.aggregate([
-    { $group: { _id: { $floor: '$rating' }, count: { $sum: 1 } } },
-    { $sort: { _id: 1 } }
-  ]);
-
-  res.json({
-    success: true,
-    data: {
-      totalMentors,
-      activeMentors,
-      verifiedMentors,
-      availableMentors,
-      expertiseDistribution,
-      sectorDistribution,
-      ratingDistribution,
-    },
-  });
+  res.json({ success: true, data: { totalMentors, activeMentors, verifiedMentors, expertiseDistribution, sectorDistribution, ratingDistribution } });
 }));
 
 export default router;

@@ -1,43 +1,45 @@
 import { Investor, CreateInvestorData, UpdateInvestorData } from '../types';
-import { mockInvestorsApi } from './mockInvestorsApi';
-
-// For now, use mock API. Replace with real API when backend is ready
-const USE_MOCK_API = true;
+import api from './api';
 
 class InvestorsApi {
   async getInvestors(): Promise<Investor[]> {
-    if (USE_MOCK_API) {
-      return mockInvestorsApi.getInvestors();
+    const response = await api.get('/investors');
+    if (response.data.success) {
+      return response.data.data.investors;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch investors');
   }
 
   async getInvestorById(id: string): Promise<Investor> {
-    if (USE_MOCK_API) {
-      return mockInvestorsApi.getInvestorById(id);
+    const response = await api.get(`/investors/${id}`);
+    if (response.data.success) {
+      return response.data.data.investor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to fetch investor');
   }
 
   async createInvestor(investorData: CreateInvestorData): Promise<Investor> {
-    if (USE_MOCK_API) {
-      return mockInvestorsApi.createInvestor(investorData);
+    const response = await api.post('/investors', investorData);
+    if (response.data.success) {
+      return response.data.data.investor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to create investor');
   }
 
   async updateInvestor(investorData: UpdateInvestorData): Promise<Investor> {
-    if (USE_MOCK_API) {
-      return mockInvestorsApi.updateInvestor(investorData);
+    const { id, ...updateData } = investorData;
+    const response = await api.put(`/investors/${id}`, updateData);
+    if (response.data.success) {
+      return response.data.data.investor;
     }
-    throw new Error('Real API not implemented yet');
+    throw new Error(response.data.message || 'Failed to update investor');
   }
 
   async deleteInvestor(id: string): Promise<void> {
-    if (USE_MOCK_API) {
-      return mockInvestorsApi.deleteInvestor(id);
+    const response = await api.delete(`/investors/${id}`);
+    if (!response.data.success) {
+      throw new Error(response.data.message || 'Failed to delete investor');
     }
-    throw new Error('Real API not implemented yet');
   }
 }
 

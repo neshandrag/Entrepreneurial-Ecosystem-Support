@@ -9,15 +9,26 @@ export const config = {
   
   // Database Configuration
   mongodb: {
-    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/citbif',
-    testUri: process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/citbif_test',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/CITBIF',
+    testUri: process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/CITBIF_test',
+  },
+  
+  // PostgreSQL Configuration
+  postgresql: {
+    user: process.env.PG_USER || 'postgres',
+    host: process.env.PG_HOST || 'localhost',
+    database: process.env.PG_DATABASE || 'citbif',
+    password: process.env.PG_PASSWORD || '',
+    port: parseInt(process.env.PG_PORT || '5432'),
+    ssl: process.env.NODE_ENV === 'production',
   },
   
   // JWT Configuration
   jwt: {
     secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-here',
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'your-super-secret-refresh-key-here',
+    expiresIn: parseInt(process.env.JWT_EXPIRES_IN || '86400'), // 24 hours in seconds
+    refreshExpiresIn: parseInt(process.env.JWT_REFRESH_EXPIRES_IN || '2592000000'), // 30 days in milliseconds
   },
   
   // Email Configuration

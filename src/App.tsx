@@ -48,7 +48,10 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (user) {
-    if (user.profileComplete || user.role === 'admin') {
+    if (user.role === 'admin') {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    if (user.profileComplete) {
       return <Navigate to="/dashboard" replace />;
     } else {
       return <Navigate to="/profile-wizard" replace />;
@@ -145,11 +148,11 @@ function App() {
 // Component to determine which dashboard to show based on user role
 function DashboardContent() {
   const { user } = useAuth();
-  
+
   if (user?.role === 'admin') {
     return <AdminOverview />;
   }
-  
+
   return <Overview />;
 }
 

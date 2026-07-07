@@ -36,8 +36,9 @@ const Signup: React.FC = () => {
 
     try {
       await signup(formData);
-    } catch (error) {
-      setErrors({ general: 'Signup failed. Please try again.' });
+    } catch (error: any) {
+      const errorMessage = error.message || 'Signup failed. Please try again.';
+      setErrors({ general: errorMessage });
     }
   };
 

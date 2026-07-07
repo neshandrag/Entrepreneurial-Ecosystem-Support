@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -13,6 +13,7 @@ const Login: React.FC = () => {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { login, isLoading } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,9 +29,18 @@ const Login: React.FC = () => {
     }
 
     try {
-      await login(formData.emailOrUsername, formData.password);
-    } catch (error) {
-      setErrors({ general: 'Invalid credentials' });
+      const result = await login(formData.emailOrUsername, formData.password);
+      
+      // Navigate to the backend-provided redirectUrl or fall back to role-based routing
+      if (result.redirectUrl) {
+        navigate(result.redirectUrl);
+      } else {
+        // Fallback navigation based on user role (shouldn't normally happen)
+        navigate('/dashboard');
+      }
+    } catch (error: unknown) {
+      const errorMessage = (error as Error).message || 'Invalid credentials';
+      setErrors({ general: errorMessage });
     }
   };
 

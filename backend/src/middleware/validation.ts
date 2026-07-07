@@ -3,7 +3,11 @@ import Joi from 'joi';
 
 export const validate = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const { error } = schema.validate(req.body);
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
     
     if (error) {
       const errorMessage = error.details.map(detail => detail.message).join(', ');
@@ -14,14 +18,19 @@ export const validate = (schema: Joi.ObjectSchema) => {
       });
       return;
     }
-    
+    // Apply sanitized values
+    (req as any).body = value;
     next();
   };
 };
 
 export const validateQuery = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const { error } = schema.validate(req.query);
+    const { error, value } = schema.validate(req.query, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
     
     if (error) {
       const errorMessage = error.details.map(detail => detail.message).join(', ');
@@ -32,14 +41,19 @@ export const validateQuery = (schema: Joi.ObjectSchema) => {
       });
       return;
     }
-    
+    // Apply sanitized values
+    (req as any).query = value;
     next();
   };
 };
 
 export const validateParams = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const { error } = schema.validate(req.params);
+    const { error, value } = schema.validate(req.params, {
+      abortEarly: false,
+      stripUnknown: true,
+      convert: true,
+    });
     
     if (error) {
       const errorMessage = error.details.map(detail => detail.message).join(', ');
@@ -50,7 +64,8 @@ export const validateParams = (schema: Joi.ObjectSchema) => {
       });
       return;
     }
-    
+    // Apply sanitized values
+    (req as any).params = value;
     next();
   };
 };

@@ -21,13 +21,43 @@ export interface IStartup extends Document {
   teamSize?: number;
   foundedYear?: number;
   location?: string;
+  coFounderNames?: string[]; // New: Co-founder names
   
   // Application details
   applicationStatus: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
   reviewNotes?: string;
   assignedMentor?: mongoose.Types.ObjectId;
   assignedInvestor?: mongoose.Types.ObjectId;
+
+  // Incubation Details (from ProfileWizard Step 3)
+  previouslyIncubated?: boolean;
+  incubatorName?: string;
+  incubatorLocation?: string;
+  incubationDuration?: string;
+  incubatorType?: string;
+  incubationMode?: 'online' | 'offline' | 'hybrid';
+  supportsReceived?: string[];
+
+  // Documentation (from ProfileWizard Step 4 - typically URLs/references to uploaded files)
+  aadhaarDoc?: string;
+  incorporationCert?: string;
+  msmeCert?: string;
+  dpiitCert?: string;
+  mouPartnership?: string;
+
+  // Pitch Deck & Traction (from ProfileWizard Step 5 - typically URLs/references or text)
+  businessDocuments?: string[]; // Array of document URLs/ids
+  tractionDetails?: string; // Text field for traction details
+  balanceSheet?: string; // Document URL/id
   
+  // Funding information (from ProfileWizard Step 6)
+  // Reconciling with existing fundingHistory, these will be used to create an entry
+  fundingStage?: string;
+  alreadyFunded?: boolean;
+  fundingAmount?: number;
+  fundingSource?: string;
+  fundingDate?: Date; // Changed to Date type to match model
+
   // Progress tracking
   milestones?: {
     name: string;
@@ -37,7 +67,7 @@ export interface IStartup extends Document {
     status: 'pending' | 'in_progress' | 'completed' | 'overdue';
   }[];
   
-  // Funding information
+  // Funding history (existing array, will append new funding info)
   fundingHistory?: {
     amount: number;
     source: string;
@@ -115,6 +145,7 @@ const startupSchema = new Schema<IStartup>({
     max: new Date().getFullYear(),
   },
   location: String,
+  coFounderNames: [String], // New: Co-founder names array
   
   // Application details
   applicationStatus: {
@@ -131,6 +162,37 @@ const startupSchema = new Schema<IStartup>({
     type: Schema.Types.ObjectId,
     ref: 'Investor',
   },
+
+  // Incubation Details
+  previouslyIncubated: Boolean,
+  incubatorName: String,
+  incubatorLocation: String,
+  incubationDuration: String,
+  incubatorType: String,
+  incubationMode: {
+    type: String,
+    enum: ['online', 'offline', 'hybrid'],
+  },
+  supportsReceived: [String],
+
+  // Documentation
+  aadhaarDoc: String,
+  incorporationCert: String,
+  msmeCert: String,
+  dpiitCert: String,
+  mouPartnership: String,
+
+  // Pitch Deck & Traction
+  businessDocuments: [String],
+  tractionDetails: String,
+  balanceSheet: String,
+
+  // Funding Information (temporary fields to be processed into fundingHistory)
+  fundingStage: String,
+  alreadyFunded: Boolean,
+  fundingAmount: Number,
+  fundingSource: String,
+  fundingDate: Date,
   
   // Progress tracking
   milestones: [{
@@ -151,7 +213,7 @@ const startupSchema = new Schema<IStartup>({
     },
   }],
   
-  // Funding information
+  // Funding history
   fundingHistory: [{
     amount: {
       type: Number,
