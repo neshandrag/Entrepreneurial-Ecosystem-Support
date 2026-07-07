@@ -3,7 +3,7 @@ import { Building2 } from "lucide-react";
 
 const Loading: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
       <div className="text-center space-y-8">
         {/* Logo */}
         <div className="flex justify-center items-center space-x-2 mb-8">

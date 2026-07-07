@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Mentor, CreateMentorData, UpdateMentorData } from '../types';
-import { mentorsApi } from '../services/mentorsApi';
+import { mentorsApi } from '../services/api';
 
 export interface UseMentorsReturn {
   mentors: Mentor[];
@@ -21,8 +21,24 @@ export const useMentors = (): UseMentorsReturn => {
     try {
       setLoading(true);
       setError(null);
-      const mentorsData = await mentorsApi.getMentors();
-      setMentors(mentorsData);
+      const response = await mentorsApi.getMentors();
+      const mentorsData = response.mentors || [];
+      
+      // Transform backend data to frontend format
+      const transformedMentors = mentorsData.map((mentor: any) => ({
+        id: mentor._id,
+        name: mentor.name,
+        role: mentor.role,
+        email: mentor.email,
+        experience: mentor.experience,
+        bio: mentor.bio,
+        profilePicture: mentor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        rating: mentor.rating || 5.0,
+        createdAt: mentor.createdAt,
+        updatedAt: mentor.updatedAt
+      }));
+      
+      setMentors(transformedMentors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch mentors');
       console.error('Error fetching mentors:', err);
@@ -34,7 +50,38 @@ export const useMentors = (): UseMentorsReturn => {
   const createMentor = useCallback(async (mentorData: CreateMentorData): Promise<Mentor> => {
     try {
       setError(null);
-      const newMentor = await mentorsApi.createMentor(mentorData);
+      
+      // Add required fields for backend
+      const mentorPayload = {
+        ...mentorData,
+        expertise: ['General Business', 'Startup Strategy'], // Default expertise
+        sectors: ['Technology', 'Innovation'], // Default sectors
+        availability: {
+          days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          timeSlots: [{ start: '09:00', end: '17:00' }],
+          timezone: 'UTC'
+        },
+        preferences: {
+          maxMentees: 5,
+          preferredSectors: ['Technology'],
+          preferredStages: ['Seed', 'Series A'],
+          meetingFrequency: 'monthly'
+        }
+      };
+      
+      const response = await mentorsApi.createMentor(mentorPayload);
+      const newMentor: Mentor = {
+        id: response.mentor._id,
+        name: response.mentor.name,
+        role: response.mentor.role,
+        email: response.mentor.email,
+        experience: response.mentor.experience,
+        bio: response.mentor.bio,
+        profilePicture: response.mentor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        rating: response.mentor.rating || 5.0,
+        createdAt: response.mentor.createdAt,
+        updatedAt: response.mentor.updatedAt
+      };
       
       // Update local state
       setMentors(prev => [...prev, newMentor]);
@@ -50,7 +97,20 @@ export const useMentors = (): UseMentorsReturn => {
   const updateMentor = useCallback(async (mentorData: UpdateMentorData): Promise<Mentor> => {
     try {
       setError(null);
-      const updatedMentor = await mentorsApi.updateMentor(mentorData);
+      const { id, ...updateData } = mentorData;
+      const response = await mentorsApi.updateMentor(id, updateData);
+      const updatedMentor: Mentor = {
+        id: response.mentor._id,
+        name: response.mentor.name,
+        role: response.mentor.role,
+        email: response.mentor.email,
+        experience: response.mentor.experience,
+        bio: response.mentor.bio,
+        profilePicture: response.mentor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        rating: response.mentor.rating || 5.0,
+        createdAt: response.mentor.createdAt,
+        updatedAt: response.mentor.updatedAt
+      };
       
       // Update local state
       setMentors(prev => prev.map(mentor => 

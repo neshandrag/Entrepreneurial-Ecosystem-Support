@@ -3,7 +3,38 @@ import Card from '../../ui/Card';
 import Button from '../../ui/Button';
 import Input from '../../ui/Input';
 import { Search, Filter, Eye, Download, FileText, Building2, User, Mail, Calendar, X, AlertCircle, Loader2 } from 'lucide-react';
-import { startupsApi, StartupWithDocuments, StartupDocument } from '../../../services/startupsApi';
+import { startupsApi } from '../../../services/api';
+
+interface StartupDocument {
+  _id?: string;
+  name: string;
+  type: string;
+  category: string;
+  uploadDate: string | Date;
+  description?: string;
+  fileSize?: string;
+  location?: string;
+  source?: string;
+}
+
+interface StartupWithDocuments {
+  _id: string;
+  name: string;
+  founder: string;
+  sector: string;
+  type: 'innovation' | 'incubation';
+  status: 'pending' | 'active' | 'completed' | 'dropout';
+  email: string;
+  submissionDate: string;
+  documents: StartupDocument[];
+  documentCount: number;
+  userId: {
+    _id: string;
+    fullName: string;
+    email: string;
+    username: string;
+  };
+}
 
 const AdminDataRoom: React.FC = () => {
   const [startups, setStartups] = useState<StartupWithDocuments[]>([]);
@@ -30,8 +61,8 @@ const AdminDataRoom: React.FC = () => {
         limit: 50, // Get more startups for admin view
       };
 
-      const data = await startupsApi.getStartupsWithDocuments(params);
-      setStartups(data.startups);
+      const response = await startupsApi.getStartupsWithDocuments(params);
+      setStartups(response.startups || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch startups');
       console.error('Error fetching startups:', err);

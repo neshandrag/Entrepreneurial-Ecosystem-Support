@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Investor, CreateInvestorData, UpdateInvestorData } from '../types';
-import { investorsApi } from '../services/investorsApi';
+import { investorsApi } from '../services/api';
 
 export interface UseInvestorsReturn {
   investors: Investor[];
@@ -21,8 +21,25 @@ export const useInvestors = (): UseInvestorsReturn => {
     try {
       setLoading(true);
       setError(null);
-      const investorsData = await investorsApi.getInvestors();
-      setInvestors(investorsData);
+      const response = await investorsApi.getInvestors();
+      const investorsData = response.investors || [];
+      
+      // Transform backend data to frontend format
+      const transformedInvestors = investorsData.map((investor: any) => ({
+        id: investor._id,
+        name: investor.name,
+        firm: investor.firm,
+        email: investor.email,
+        phoneNumber: investor.phoneNumber,
+        investmentRange: investor.investmentRange,
+        focusAreas: investor.focusAreas,
+        backgroundSummary: investor.backgroundSummary,
+        profilePicture: investor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        createdAt: investor.createdAt,
+        updatedAt: investor.updatedAt
+      }));
+      
+      setInvestors(transformedInvestors);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch investors');
       console.error('Error fetching investors:', err);
@@ -34,7 +51,34 @@ export const useInvestors = (): UseInvestorsReturn => {
   const createInvestor = useCallback(async (investorData: CreateInvestorData): Promise<Investor> => {
     try {
       setError(null);
-      const newInvestor = await investorsApi.createInvestor(investorData);
+      
+      // Add required fields for backend
+      const investorPayload = {
+        ...investorData,
+        preferences: {
+          minInvestment: 50000,
+          maxInvestment: 2000000,
+          preferredSectors: investorData.focusAreas,
+          preferredStages: ['Seed', 'Series A'],
+          geographicFocus: ['North America'],
+          investmentCriteria: ['Strong team', 'Market potential']
+        }
+      };
+      
+      const response = await investorsApi.createInvestor(investorPayload);
+      const newInvestor: Investor = {
+        id: response.investor._id,
+        name: response.investor.name,
+        firm: response.investor.firm,
+        email: response.investor.email,
+        phoneNumber: response.investor.phoneNumber,
+        investmentRange: response.investor.investmentRange,
+        focusAreas: response.investor.focusAreas,
+        backgroundSummary: response.investor.backgroundSummary,
+        profilePicture: response.investor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        createdAt: response.investor.createdAt,
+        updatedAt: response.investor.updatedAt
+      };
       
       // Update local state
       setInvestors(prev => [...prev, newInvestor]);
@@ -50,7 +94,21 @@ export const useInvestors = (): UseInvestorsReturn => {
   const updateInvestor = useCallback(async (investorData: UpdateInvestorData): Promise<Investor> => {
     try {
       setError(null);
-      const updatedInvestor = await investorsApi.updateInvestor(investorData);
+      const { id, ...updateData } = investorData;
+      const response = await investorsApi.updateInvestor(id, updateData);
+      const updatedInvestor: Investor = {
+        id: response.investor._id,
+        name: response.investor.name,
+        firm: response.investor.firm,
+        email: response.investor.email,
+        phoneNumber: response.investor.phoneNumber,
+        investmentRange: response.investor.investmentRange,
+        focusAreas: response.investor.focusAreas,
+        backgroundSummary: response.investor.backgroundSummary,
+        profilePicture: response.investor.name.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        createdAt: response.investor.createdAt,
+        updatedAt: response.investor.updatedAt
+      };
       
       // Update local state
       setInvestors(prev => prev.map(investor => 

@@ -2,25 +2,25 @@ import React, { useState } from 'react';
 import Card from '../../ui/Card';
 import Button from '../../ui/Button';
 import Input from '../../ui/Input';
+import { useStartups } from '../../../hooks/useStartups';
 import { Search, Filter, Eye, Check, X, Calendar, Building2, User, Mail, AlertCircle, CheckCircle, Loader2, Phone } from 'lucide-react';
-import { Startup } from '../../../types';
 import { useAlerts } from '../../../context/AlertsContext';
 import { useNotifications } from '../../../context/NotificationsContext';
-import { useApplications } from '../../../context/ApplicationsContext';
 
 const Review: React.FC = () => {
   const { createApplicationApprovalAlert, createReminderAlert } = useAlerts();
   const { createApplicationNotification, createReviewNotification } = useNotifications();
   const { 
-    applications, 
-    updateApplication, 
-    approveApplication, 
-    rejectApplication 
-  } = useApplications();
+    startups, 
+    loading, 
+    error, 
+    updateStartupStatus, 
+    refreshStartups 
+  } = useStartups({ applicationStatus: 'submitted,under_review' });
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('pending');
-  const [selectedStartup, setSelectedStartup] = useState<Startup | null>(null);
+  const [selectedStartup, setSelectedStartup] = useState<any>(null);
   const [processingStartupId, setProcessingStartupId] = useState<string | null>(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [showErrorMessage, setShowErrorMessage] = useState(false);
@@ -32,28 +32,25 @@ const Review: React.FC = () => {
   const [callDate, setCallDate] = useState('');
   const [callTime, setCallTime] = useState('');
 
-  // Use dynamic applications from context
-  const startups = applications;
-
-  const filteredStartups = startups.filter(startup => {
+  const filteredStartups = startups.filter((startup: any) => {
     const matchesSearch = startup.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          startup.founder.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          startup.sector.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || startup.status === filterStatus;
+    const matchesFilter = filterStatus === 'all' || 
+                         (filterStatus === 'pending' && (startup.applicationStatus === 'submitted' || startup.applicationStatus === 'under_review')) ||
+                         (filterStatus === 'approved' && startup.applicationStatus === 'approved') ||
+                         (filterStatus === 'rejected' && startup.applicationStatus === 'rejected');
     return matchesSearch && matchesFilter;
   });
 
   const handleApprove = async (startupId: string) => {
     setProcessingStartupId(startupId);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       // Find the startup to get its details
-      const startup = startups.find(s => s.id === startupId);
+      const startup = startups.find((s: any) => s._id === startupId);
       
-      // Update application status using context
-      approveApplication(startupId);
+      // Update application status using API
+      await updateStartupStatus(startupId, 'active', 'approved');
       
       // Create automatic alert for the approved startup
       if (startup) {
@@ -72,7 +69,7 @@ const Review: React.FC = () => {
       setTimeout(() => setShowSuccessMessage(false), 3000);
       
       // Close detail view if open
-      if (selectedStartup?.id === startupId) {
+      if (selectedStartup?._id === startupId) {
         setSelectedStartup(null);
       }
     } catch (error) {
@@ -91,18 +88,15 @@ const Review: React.FC = () => {
     
     setProcessingStartupId(startupId);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Update application status using context
-      rejectApplication(startupId);
+      // Update application status using API
+      await updateStartupStatus(startupId, 'dropout', 'rejected');
       
       setMessage('Startup application rejected.');
       setShowSuccessMessage(true);
       setTimeout(() => setShowSuccessMessage(false), 3000);
       
       // Close detail view if open
-      if (selectedStartup?.id === startupId) {
+      if (selectedStartup?._id === startupId) {
         setSelectedStartup(null);
       }
     } catch (error) {
@@ -207,26 +201,28 @@ const Review: React.FC = () => {
     return type === 'incubation' ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400';
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const getStatusColor = (applicationStatus: string) => {
+    switch (applicationStatus) {
       case 'approved':
         return 'bg-green-900/30 text-green-400';
       case 'rejected':
         return 'bg-red-900/30 text-red-400';
-      case 'pending':
+      case 'submitted':
+      case 'under_review':
         return 'bg-yellow-900/30 text-yellow-400';
       default:
         return 'bg-gray-900/30 text-gray-400';
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+  const getStatusIcon = (applicationStatus: string) => {
+    switch (applicationStatus) {
       case 'approved':
         return <CheckCircle className="h-4 w-4" />;
       case 'rejected':
         return <X className="h-4 w-4" />;
-      case 'pending':
+      case 'submitted':
+      case 'under_review':
         return <AlertCircle className="h-4 w-4" />;
       default:
         return <AlertCircle className="h-4 w-4" />;
@@ -274,9 +270,9 @@ const Review: React.FC = () => {
                   <div>
                     <label className="block text-sm text-gray-400 mb-1">Status</label>
                     <div className="flex items-center space-x-2">
-                      {getStatusIcon(selectedStartup.status)}
-                      <span className={`text-xs px-2 py-1 rounded-full capitalize ${getStatusColor(selectedStartup.status)}`}>
-                        {selectedStartup.status}
+                      {getStatusIcon(selectedStartup.applicationStatus)}
+                      <span className={`text-xs px-2 py-1 rounded-full capitalize ${getStatusColor(selectedStartup.applicationStatus)}`}>
+                        {selectedStartup.applicationStatus}
                       </span>
                     </div>
                   </div>
@@ -343,50 +339,50 @@ const Review: React.FC = () => {
                   <Button 
                     variant="primary" 
                     className={`w-full flex items-center space-x-2 ${
-                      selectedStartup.status === 'approved' 
+                      selectedStartup.applicationStatus === 'approved' 
                         ? 'bg-green-600 cursor-not-allowed' 
                         : 'bg-green-600 hover:bg-green-700'
                     }`}
-                    onClick={() => handleApprove(selectedStartup.id)}
-                    disabled={processingStartupId === selectedStartup.id || selectedStartup.status !== 'pending'}
+                    onClick={() => handleApprove(selectedStartup._id)}
+                    disabled={processingStartupId === selectedStartup._id || selectedStartup.applicationStatus === 'approved'}
                   >
-                    {processingStartupId === selectedStartup.id ? (
+                    {processingStartupId === selectedStartup._id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Check className="h-4 w-4" />
                     )}
                     <span>
-                      {selectedStartup.status === 'approved' ? 'Approved' : 'Approve Application'}
+                      {selectedStartup.applicationStatus === 'approved' ? 'Approved' : 'Approve Application'}
                     </span>
                   </Button>
                   
                   <Button 
                     variant="danger" 
                     className={`w-full flex items-center space-x-2 ${
-                      selectedStartup.status === 'rejected' 
+                      selectedStartup.applicationStatus === 'rejected' 
                         ? 'bg-red-600 cursor-not-allowed' 
                         : 'bg-red-600 hover:bg-red-700'
                     }`}
-                    onClick={() => handleReject(selectedStartup.id)}
-                    disabled={processingStartupId === selectedStartup.id || selectedStartup.status !== 'pending'}
+                    onClick={() => handleReject(selectedStartup._id)}
+                    disabled={processingStartupId === selectedStartup._id || selectedStartup.applicationStatus === 'rejected'}
                   >
-                    {processingStartupId === selectedStartup.id ? (
+                    {processingStartupId === selectedStartup._id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <X className="h-4 w-4" />
                     )}
                     <span>
-                      {selectedStartup.status === 'rejected' ? 'Rejected' : 'Reject Application'}
+                      {selectedStartup.applicationStatus === 'rejected' ? 'Rejected' : 'Reject Application'}
                     </span>
                   </Button>
                   
                   <Button 
                     variant="outline" 
                     className="w-full"
-                    onClick={() => handleRequestMoreInfo(selectedStartup.id)}
-                    disabled={processingStartupId === selectedStartup.id}
+                    onClick={() => handleRequestMoreInfo(selectedStartup._id)}
+                    disabled={processingStartupId === selectedStartup._id}
                   >
-                    {processingStartupId === selectedStartup.id ? (
+                    {processingStartupId === selectedStartup._id ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Sending...
@@ -405,7 +401,7 @@ const Review: React.FC = () => {
                     variant="outline" 
                     className="w-full flex items-center space-x-2"
                     onClick={() => setShowEmailModal(true)}
-                    disabled={processingStartupId === selectedStartup.id}
+                    disabled={processingStartupId === selectedStartup._id}
                   >
                     <Mail className="h-4 w-4" />
                     <span>Send Email</span>
@@ -414,7 +410,7 @@ const Review: React.FC = () => {
                     variant="outline" 
                     className="w-full"
                     onClick={() => setShowCallModal(true)}
-                    disabled={processingStartupId === selectedStartup.id}
+                    disabled={processingStartupId === selectedStartup._id}
                   >
                     <Phone className="h-4 w-4 mr-2" />
                     Schedule Call
@@ -427,11 +423,13 @@ const Review: React.FC = () => {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Submitted:</span>
-                    <span className="text-white">{selectedStartup.submissionDate}</span>
+                    <span className="text-white">{new Date(selectedStartup.submissionDate).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Days pending:</span>
-                    <span className="text-yellow-400">2 days</span>
+                    <span className="text-yellow-400">
+                      {Math.floor((new Date().getTime() - new Date(selectedStartup.submissionDate).getTime()) / (1000 * 60 * 60 * 24))} days
+                    </span>
                   </div>
                 </div>
               </div>
@@ -454,19 +452,19 @@ const Review: React.FC = () => {
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 rounded-full bg-yellow-500" />
             <span className="text-sm text-gray-400">
-              Pending: {startups.filter(s => s.status === 'pending').length}
+              Pending: {startups.filter((s: any) => s.applicationStatus === 'submitted' || s.applicationStatus === 'under_review').length}
             </span>
           </div>
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 rounded-full bg-green-500" />
             <span className="text-sm text-gray-400">
-              Approved: {startups.filter(s => s.status === 'approved').length}
+              Approved: {startups.filter((s: any) => s.applicationStatus === 'approved').length}
             </span>
           </div>
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 rounded-full bg-red-500" />
             <span className="text-sm text-gray-400">
-              Rejected: {startups.filter(s => s.status === 'rejected').length}
+              Rejected: {startups.filter((s: any) => s.applicationStatus === 'rejected').length}
             </span>
           </div>
         </div>
@@ -536,9 +534,9 @@ const Review: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-400">Status:</span>
                   <div className="flex items-center space-x-1">
-                    {getStatusIcon(startup.status)}
-                    <span className={`text-xs px-2 py-1 rounded-full capitalize ${getStatusColor(startup.status)}`}>
-                      {startup.status}
+                    {getStatusIcon(startup.applicationStatus)}
+                    <span className={`text-xs px-2 py-1 rounded-full capitalize ${getStatusColor(startup.applicationStatus)}`}>
+                      {startup.applicationStatus}
                     </span>
                   </div>
                 </div>
@@ -546,7 +544,7 @@ const Review: React.FC = () => {
                   <span className="text-sm text-gray-400">Submitted:</span>
                   <span className="text-sm text-white flex items-center">
                     <Calendar className="h-3 w-3 mr-1" />
-                    {startup.submissionDate}
+                    {new Date(startup.submissionDate).toLocaleDateString()}
                   </span>
                 </div>
               </div>
@@ -563,15 +561,15 @@ const Review: React.FC = () => {
                 <Button 
                   size="sm" 
                   variant="outline" 
-                  onClick={() => handleApprove(startup.id)}
+                  onClick={() => handleApprove(startup._id)}
                   className={`${
-                    startup.status === 'approved' 
+                    startup.applicationStatus === 'approved' 
                       ? 'text-green-400 bg-green-900/20 cursor-not-allowed' 
                       : 'text-green-400 hover:bg-green-900/20'
                   }`}
-                  disabled={processingStartupId === startup.id || startup.status !== 'pending'}
+                  disabled={processingStartupId === startup._id || startup.applicationStatus === 'approved'}
                 >
-                  {processingStartupId === startup.id ? (
+                  {processingStartupId === startup._id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Check className="h-4 w-4" />
@@ -580,15 +578,15 @@ const Review: React.FC = () => {
                 <Button 
                   size="sm" 
                   variant="outline" 
-                  onClick={() => handleReject(startup.id)}
+                  onClick={() => handleReject(startup._id)}
                   className={`${
-                    startup.status === 'rejected' 
+                    startup.applicationStatus === 'rejected' 
                       ? 'text-red-400 bg-red-900/20 cursor-not-allowed' 
                       : 'text-red-400 hover:bg-red-900/20'
                   }`}
-                  disabled={processingStartupId === startup.id || startup.status !== 'pending'}
+                  disabled={processingStartupId === startup._id || startup.applicationStatus === 'rejected'}
                 >
-                  {processingStartupId === startup.id ? (
+                  {processingStartupId === startup._id ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <X className="h-4 w-4" />
@@ -689,10 +687,10 @@ const Review: React.FC = () => {
                   </Button>
                   <Button
                     onClick={handleSendEmail}
-                    disabled={processingStartupId === selectedStartup?.id}
+                    disabled={processingStartupId === selectedStartup?._id}
                     className="flex-1"
                   >
-                    {processingStartupId === selectedStartup?.id ? (
+                    {processingStartupId === selectedStartup?._id ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Sending...
@@ -761,10 +759,10 @@ const Review: React.FC = () => {
                   </Button>
                   <Button
                     onClick={handleScheduleCall}
-                    disabled={processingStartupId === selectedStartup?.id}
+                    disabled={processingStartupId === selectedStartup?._id}
                     className="flex-1"
                   >
-                    {processingStartupId === selectedStartup?.id ? (
+                    {processingStartupId === selectedStartup?._id ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Scheduling...

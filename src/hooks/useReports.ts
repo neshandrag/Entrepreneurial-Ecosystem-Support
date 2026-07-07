@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Report, CreateReportData, UpdateReportData } from '../types';
-import { reportsApi } from '../services/reportsApi';
+import { reportsApi } from '../services/api';
 
 export interface UseReportsReturn {
   reports: Report[];
@@ -21,8 +21,22 @@ export const useReports = (): UseReportsReturn => {
     try {
       setLoading(true);
       setError(null);
-      const reportsData = await reportsApi.getReports();
-      setReports(reportsData);
+      const response = await reportsApi.getReports();
+      const reportsData = response.reports || [];
+      
+      // Transform backend data to frontend format
+      const transformedReports = reportsData.map((report: any) => ({
+        id: report._id,
+        name: report.name,
+        type: report.type,
+        dateGenerated: new Date(report.dateGenerated).toISOString().split('T')[0],
+        fileSize: report.fileSize,
+        status: report.status,
+        createdAt: report.createdAt,
+        updatedAt: report.updatedAt
+      }));
+      
+      setReports(transformedReports);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch reports');
       console.error('Error fetching reports:', err);
@@ -34,7 +48,31 @@ export const useReports = (): UseReportsReturn => {
   const createReport = useCallback(async (reportData: CreateReportData): Promise<Report> => {
     try {
       setError(null);
-      const newReport = await reportsApi.createReport(reportData);
+      
+      // Add required fields for backend
+      const reportPayload = {
+        ...reportData,
+        description: `Generated report: ${reportData.name}`,
+        parameters: {},
+        reportConfig: {
+          format: 'pdf',
+          filters: {},
+        },
+        isPublic: false,
+        tags: []
+      };
+      
+      const response = await reportsApi.createReport(reportPayload);
+      const newReport: Report = {
+        id: response.report._id,
+        name: response.report.name,
+        type: response.report.type,
+        dateGenerated: new Date(response.report.dateGenerated).toISOString().split('T')[0],
+        fileSize: response.report.fileSize,
+        status: response.report.status,
+        createdAt: response.report.createdAt,
+        updatedAt: response.report.updatedAt
+      };
       
       // Update local state
       setReports(prev => [...prev, newReport]);
@@ -50,7 +88,18 @@ export const useReports = (): UseReportsReturn => {
   const updateReport = useCallback(async (reportData: UpdateReportData): Promise<Report> => {
     try {
       setError(null);
-      const updatedReport = await reportsApi.updateReport(reportData);
+      const { id, ...updateData } = reportData;
+      const response = await reportsApi.updateReport(id, updateData);
+      const updatedReport: Report = {
+        id: response.report._id,
+        name: response.report.name,
+        type: response.report.type,
+        dateGenerated: new Date(response.report.dateGenerated).toISOString().split('T')[0],
+        fileSize: response.report.fileSize,
+        status: response.report.status,
+        createdAt: response.report.createdAt,
+        updatedAt: response.report.updatedAt
+      };
       
       // Update local state
       setReports(prev => prev.map(report => 

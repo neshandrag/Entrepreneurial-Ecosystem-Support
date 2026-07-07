@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
+import { authApi } from '../services/api';
 import { useNotifications } from './NotificationsContext';
 import api from '../services/api';
 
@@ -39,162 +40,139 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     console.log('AuthContext useEffect running');
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setIsLoading(false);
-        return;
+    // Check for existing session
+    const savedUser = localStorage.getItem('user');
+    const savedToken = localStorage.getItem('token');
+    console.log('Saved user:', savedUser);
+    
+    if (savedUser && savedToken) {
+      try {
+        const userData = JSON.parse(savedUser);
+        setUser(userData);
+        console.log('Restored user session:', userData);
+      } catch (error) {
+        console.error('Error parsing saved user:', error);
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
       }
-
-      // Verify token with backend
-      const response = await api.get('/auth/me');
-      if (response.data.success && response.data.data.user) {
-        const userData = response.data.data.user;
-        // Map backend user format to frontend user format
-        const user: User = {
-          id: userData.id,
-          fullName: userData.fullName,
-          email: userData.email,
-          username: userData.username,
-          role: userData.role.toLowerCase() === 'admin' ? 'admin' : 
-                userData.role.toLowerCase() === 'enterprise' ? 'enterprise' : 'individual',
-          profileComplete: userData.profileComplete,
-          createdAt: userData.createdAt,
-          startupId: userData.startupId
-        };
-        setUser(user);
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      // Clear invalid token
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const login = async (email: string, password: string): Promise<{ redirectUrl?: string }> => {
     setIsLoading(true);
+    
     try {
-      // Determine if this is an admin login
-      const isAdminLogin = email.includes('admin') || email === 'admin@citbif.com';
-      const endpoint = isAdminLogin ? '/auth/admin/login' : '/auth/login';
+      const response = await authApi.login(email, password);
+      const userData: User = {
+        id: response.user._id,
+        fullName: response.user.fullName,
+        email: response.user.email,
+        username: response.user.username,
+        role: response.user.role,
+        profileComplete: response.user.profileComplete,
+        createdAt: response.user.createdAt,
+      };
       
-      const response = await api.post(endpoint, { email, password });
+      setUser(userData);
       
-      if (response.data.success) {
-        const { user: userData, accessToken, refreshToken, redirectUrl } = response.data.data;
-        
-        // Store tokens
-        localStorage.setItem('token', accessToken);
-        if (refreshToken) {
-          localStorage.setItem('refreshToken', refreshToken);
-        }
-        
-        // Map backend user format to frontend user format
-        const user: User = {
-          id: userData.id,
-          fullName: userData.fullName,
-          email: userData.email,
-          username: userData.username,
-          role: userData.role.toLowerCase() === 'admin' ? 'admin' : 
-                userData.role.toLowerCase() === 'enterprise' ? 'enterprise' : 'individual',
-          profileComplete: userData.profileComplete,
-          createdAt: userData.createdAt,
-          startupId: userData.startupId
-        };
-        
-        setUser(user);
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        return { redirectUrl };
-      } else {
-        throw new Error(response.data.message || 'Login failed');
+      // Create notification for admin when new user logs in
+      if (notificationsContext && userData.role !== 'admin') {
+        notificationsContext.createSignupNotification(
+          userData.fullName,
+          userData.email,
+          userData.role
+        );
       }
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Login error:', error);
-      const errorMessage = (error as any).response?.data?.message || (error as Error).message || 'Login failed';
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
+    setIsLoading(false);
   };
 
   const signup = async (data: SignupData) => {
     setIsLoading(true);
+    
     try {
-      const response = await api.post('/auth/signup', data);
+      const response = await authApi.signup(data);
+      const userData: User = {
+        id: response.user._id,
+        fullName: response.user.fullName,
+        email: response.user.email,
+        username: response.user.username,
+        role: response.user.role,
+        profileComplete: response.user.profileComplete,
+        createdAt: response.user.createdAt,
+      };
       
-      if (response.data.success) {
-        const { user: userData, accessToken, refreshToken } = response.data.data;
-        
-        // Store tokens
-        localStorage.setItem('token', accessToken);
-        if (refreshToken) {
-          localStorage.setItem('refreshToken', refreshToken);
-        }
-        
-        // Map backend user format to frontend user format
-        const user: User = {
-          id: userData.id,
-          fullName: userData.fullName,
-          email: userData.email,
-          username: userData.username,
-          role: userData.role.toLowerCase() === 'admin' ? 'admin' : 
-                userData.role.toLowerCase() === 'enterprise' ? 'enterprise' : 'individual',
-          profileComplete: userData.profileComplete,
-          createdAt: userData.createdAt,
-          startupId: userData.startupId
-        };
-        
-        setUser(user);
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        // Create notification for admin when new user signs up
-        if (notificationsContext) {
-          notificationsContext.createSignupNotification(
-            data.fullName,
-            data.email,
-            data.role
-          );
-        }
-      } else {
-        throw new Error(response.data.message || 'Signup failed');
+      setUser(userData);
+      
+      // Create notification for admin when new user signs up
+      if (notificationsContext) {
+        notificationsContext.createSignupNotification(
+          data.fullName,
+          data.email,
+          data.role
+        );
       }
-    } catch (error: any) {
+      
+      // Create application for enterprise users (startups)
+      if (data.role === 'enterprise' && applicationsContext) {
+        // Generate a random TRL level between 1-9
+        const trlLevel = Math.floor(Math.random() * 9) + 1;
+        
+        // Determine application type based on TRL level
+        const type = trlLevel <= 5 ? 'incubation' : 'innovation';
+        
+        // Generate a startup name if not provided
+        const startupName = data.fullName.includes(' ') 
+          ? `${data.fullName.split(' ')[0]}'s Startup`
+          : `${data.fullName}'s Startup`;
+        
+        // Generate a sector based on email domain or random
+        const sectors = ['CleanTech', 'HealthTech', 'EdTech', 'FinTech', 'AgriTech', 'AI/ML', 'IoT', 'Blockchain'];
+        const sector = sectors[Math.floor(Math.random() * sectors.length)];
+        
+        applicationsContext.addApplication({
+          name: startupName,
+          founder: data.fullName,
+          sector: sector,
+          type: type,
+          trlLevel: trlLevel,
+          email: data.email,
+          submissionDate: new Date().toISOString().split('T')[0]
+        });
+      }
+    } catch (error) {
       console.error('Signup error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Signup failed';
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
+    setIsLoading(false);
   };
 
   const logout = async () => {
     try {
-      const refreshToken = localStorage.getItem('refreshToken');
-      await api.post('/auth/logout', { refreshToken });
+      await authApi.logout();
     } catch (error) {
       console.error('Logout error:', error);
-    } finally {
-      // Clear all local data regardless of API call success
-      setUser(null);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
     }
+    setUser(null);
   };
 
   const updateUser = (updates: Partial<User>) => {
     if (user) {
       const updatedUser = { ...user, ...updates };
       setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      // Update localStorage
+      const savedData = localStorage.getItem('user');
+      if (savedData) {
+        const currentData = JSON.parse(savedData);
+        localStorage.setItem('user', JSON.stringify({
+          ...currentData,
+          ...updates
+        }));
+      }
     }
   };
 

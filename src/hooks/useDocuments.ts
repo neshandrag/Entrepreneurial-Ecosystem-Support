@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Document, CreateDocumentData, UpdateDocumentData } from '../types';
-import { documentsApi } from '../services/documentsApi';
+import { documentsApi } from '../services/api';
 
 export interface UseDocumentsReturn {
   documents: Document[];
@@ -21,8 +21,8 @@ export const useDocuments = (): UseDocumentsReturn => {
     try {
       setLoading(true);
       setError(null);
-      const documentsData = await documentsApi.getDocuments();
-      setDocuments(documentsData);
+      const response = await documentsApi.getDocuments();
+      setDocuments(response.documents || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch documents');
       console.error('Error fetching documents:', err);
@@ -34,7 +34,29 @@ export const useDocuments = (): UseDocumentsReturn => {
   const createDocument = useCallback(async (documentData: CreateDocumentData): Promise<Document> => {
     try {
       setError(null);
-      const newDocument = await documentsApi.createDocument(documentData);
+      
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('name', documentData.name);
+      formData.append('category', 'other');
+      formData.append('description', `Document: ${documentData.name}`);
+      
+      // Create a dummy file for demo purposes
+      const dummyFile = new File(['Document content'], documentData.name, { type: 'text/plain' });
+      formData.append('file', dummyFile);
+      
+      const response = await documentsApi.uploadDocument(formData);
+      const newDocument: Document = {
+        id: response.document._id,
+        name: response.document.name,
+        location: response.document.location,
+        owner: response.document.owner,
+        fileSize: response.document.fileSize,
+        uploadDate: new Date(response.document.uploadDate).toISOString().split('T')[0],
+        type: response.document.type,
+        createdAt: response.document.createdAt,
+        updatedAt: response.document.updatedAt
+      };
       
       // Update local state
       setDocuments(prev => [newDocument, ...prev]);

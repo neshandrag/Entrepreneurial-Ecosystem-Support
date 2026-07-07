@@ -72,20 +72,20 @@ const DataRoom: React.FC = () => {
           continue;
         }
 
-        // Create document data
-        const documentData: CreateDocumentData = {
-          name: file.name,
-          location: 'Documents/Uploads',
-          owner: 'Current User', // You can get this from auth context
-          fileSize: formatFileSize(file.size),
-          uploadDate: new Date().toISOString().split('T')[0],
-          type: fileType
-        };
+        // Create FormData for file upload
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('name', file.name.replace(/\.[^/.]+$/, "")); // Remove extension
+        formData.append('category', 'other');
+        formData.append('description', `Uploaded file: ${file.name}`);
+        formData.append('isPublic', 'false');
 
-        // Create the document
-        await createDocument(documentData);
+        // Upload using the documents API
+        await documentsApi.uploadDocument(formData);
       }
 
+      // Refresh documents list
+      await refreshDocuments();
       alert('Files uploaded successfully!');
     } catch (error) {
       console.error('Upload error:', error);

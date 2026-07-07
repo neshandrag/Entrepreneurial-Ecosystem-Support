@@ -1,5 +1,6 @@
 import React from 'react';
 import Card from '../../ui/Card';
+import { useStartups } from '../../../hooks/useStartups';
 import { 
   TrendingUp, 
   Users, 
@@ -17,6 +18,7 @@ import { useFunding } from '../../../context/FundingContext';
 import { useAlerts } from '../../../context/AlertsContext';
 
 const Overview: React.FC = () => {
+  const { startups: userStartups, stats, loading: startupsLoading, error: startupsError } = useStartups();
   const { investors, loading: investorsLoading, error: investorsError } = useInvestors();
   const { fundingStages } = useFunding();
   const { getUpcomingAlerts, markAsCompleted, deleteAlert } = useAlerts();
@@ -101,6 +103,28 @@ const Overview: React.FC = () => {
       <div>
         <h1 className="text-3xl font-bold text-white mb-2">Startup Dashboard</h1>
         <p className="text-gray-400">Track your progress and manage your startup journey</p>
+        
+        {/* Show startup info if available */}
+        {userStartups.length > 0 && (
+          <div className="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+            <div className="flex items-center space-x-3">
+              <Building2 className="h-6 w-6 text-cyan-400" />
+              <div>
+                <h3 className="text-lg font-semibold text-white">{userStartups[0].name}</h3>
+                <p className="text-sm text-gray-400">
+                  {userStartups[0].sector} • {userStartups[0].type} • 
+                  Status: <span className={`capitalize ${
+                    userStartups[0].applicationStatus === 'approved' ? 'text-green-400' :
+                    userStartups[0].applicationStatus === 'rejected' ? 'text-red-400' :
+                    'text-yellow-400'
+                  }`}>
+                    {userStartups[0].applicationStatus}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Upcoming Alerts */}
@@ -293,6 +317,30 @@ const Overview: React.FC = () => {
         </Card>
       </div>
 
+      {/* Startup Statistics */}
+      {stats && (
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold text-white mb-6">Platform Statistics</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-cyan-400">{stats.totalStartups}</div>
+              <div className="text-sm text-gray-400">Total Startups</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-400">{stats.activeStartups}</div>
+              <div className="text-sm text-gray-400">Active</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-400">{stats.innovationStartups}</div>
+              <div className="text-sm text-gray-400">Innovation</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-purple-400">{stats.incubationStartups}</div>
+              <div className="text-sm text-gray-400">Incubation</div>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

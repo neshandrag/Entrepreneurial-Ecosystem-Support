@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import Card from '../../ui/Card';
 import Button from '../../ui/Button';
 import Input from '../../ui/Input';
+import { useStartups } from '../../../hooks/useStartups';
+import { usersApi } from '../../../services/api';
 import { useNotifications } from '../../../context/NotificationsContext';
 import { 
   Building2, 
@@ -18,6 +20,10 @@ import {
 } from 'lucide-react';
 
 const AdminOverview: React.FC = () => {
+  const { startups, stats, loading: startupsLoading, error: startupsError } = useStartups();
+  const [userStats, setUserStats] = useState<any>(null);
+  const [loadingUserStats, setLoadingUserStats] = useState(true);
+  
   const { 
     getRecentNotifications, 
     getUnreadCount, 
@@ -31,51 +37,71 @@ const AdminOverview: React.FC = () => {
   const [selectedSector, setSelectedSector] = useState('all');
   const [selectedStage, setSelectedStage] = useState('all');
 
-  const metrics = [
-    { 
-      title: 'Total Startups', 
-      value: '156', 
-      icon: Building2, 
-      color: 'text-blue-400',
-      type: 'total'
-    },
-    { 
-      title: 'Incubation Startups', 
-      value: '89', 
-      icon: TrendingUp, 
-      color: 'text-green-400',
-      type: 'incubation'
-    },
-    { 
-      title: 'Innovation Startups', 
-      value: '67', 
-      icon: Users, 
-      color: 'text-cyan-400',
-      type: 'innovation'
-    },
-    { 
-      title: 'Dropout Startups', 
-      value: '12', 
-      icon: AlertTriangle, 
-      color: 'text-red-400',
-      type: 'dropout'
-    },
-  ];
+  // Fetch user stats
+  React.useEffect(() => {
+    const fetchUserStats = async () => {
+      try {
+        const data = await usersApi.getUserStats();
+        setUserStats(data);
+      } catch (error) {
+        console.error('Error fetching user stats:', error);
+      } finally {
+        setLoadingUserStats(false);
+      }
+    };
+    
+    fetchUserStats();
+  }, []);
 
-  // Mock startup data
-  const startups = [
-    { id: '1', name: 'TechCorp Solutions', sector: 'Technology', stage: 'Incubation', status: 'Active', founded: '2023-01-15', employees: 25 },
-    { id: '2', name: 'GreenEnergy Co', sector: 'CleanTech', stage: 'Innovation', status: 'Active', founded: '2023-03-22', employees: 18 },
-    { id: '3', name: 'HealthTech Innovations', sector: 'Healthcare', stage: 'Incubation', status: 'Active', founded: '2023-02-10', employees: 32 },
-    { id: '4', name: 'FinTech Startup', sector: 'Finance', stage: 'Innovation', status: 'Active', founded: '2023-04-05', employees: 15 },
-    { id: '5', name: 'EduTech Platform', sector: 'Education', stage: 'Incubation', status: 'Active', founded: '2023-01-28', employees: 22 },
-    { id: '6', name: 'AgriTech Solutions', sector: 'Agriculture', stage: 'Innovation', status: 'Active', founded: '2023-03-15', employees: 12 },
-    { id: '7', name: 'RetailTech App', sector: 'Retail', stage: 'Incubation', status: 'Inactive', founded: '2022-11-20', employees: 8 },
-    { id: '8', name: 'LogisticsAI', sector: 'Logistics', stage: 'Innovation', status: 'Active', founded: '2023-02-18', employees: 28 },
-  ];
+  // Create metrics from real data
+  const metrics = React.useMemo(() => {
+    if (!stats) {
+      return [
+        { title: 'Total Startups', value: '0', icon: Building2, color: 'text-blue-400', type: 'total' },
+        { title: 'Incubation Startups', value: '0', icon: TrendingUp, color: 'text-green-400', type: 'incubation' },
+        { title: 'Innovation Startups', value: '0', icon: Users, color: 'text-cyan-400', type: 'innovation' },
+        { title: 'Pending Review', value: '0', icon: AlertTriangle, color: 'text-yellow-400', type: 'pending' },
+      ];
+    }
+    
+    return [
+      { 
+        title: 'Total Startups', 
+        value: stats.totalStartups.toString(), 
+        icon: Building2, 
+        color: 'text-blue-400',
+        type: 'total'
+      },
+      { 
+        title: 'Incubation Startups', 
+        value: stats.incubationStartups.toString(), 
+        icon: TrendingUp, 
+        color: 'text-green-400',
+        type: 'incubation'
+      },
+      { 
+        title: 'Innovation Startups', 
+        value: stats.innovationStartups.toString(), 
+        icon: Users, 
+        color: 'text-cyan-400',
+        type: 'innovation'
+      },
+      { 
+        title: 'Pending Review', 
+        value: stats.pendingStartups.toString(), 
+        icon: AlertTriangle, 
+        color: 'text-yellow-400',
+        type: 'pending'
+      },
+    ];
+  }, [stats]);
 
-  const sectors = ['Technology', 'CleanTech', 'Healthcare', 'Finance', 'Education', 'Agriculture', 'Retail', 'Logistics'];
-  const stages = ['Incubation', 'Innovation'];
+  const sectors = React.useMemo(() => {
+    if (!stats?.sectorDistribution) return [];
+    return stats.sectorDistribution.map(item => item._id);
+  }, [stats]);
+  
+  const stages = ['incubation', 'innovation'];
 
   const handleMetricClick = (metricType: string) => {
     setSelectedMetric(metricType);
@@ -91,15 +117,23 @@ const AdminOverview: React.FC = () => {
   };
 
   const getFilteredStartups = () => {
-    let filtered = startups;
+    let filtered = startups.map(startup => ({
+      id: startup._id,
+      name: startup.name,
+      sector: startup.sector,
+      stage: startup.type,
+      status: startup.status === 'active' ? 'Active' : startup.status === 'pending' ? 'Pending' : 'Inactive',
+      founded: new Date(startup.submissionDate).toISOString().split('T')[0],
+      employees: startup.teamSize || Math.floor(Math.random() * 50) + 5 // Random for demo
+    }));
 
     // Filter by metric type
     if (selectedMetric === 'incubation') {
-      filtered = filtered.filter(startup => startup.stage === 'Incubation');
+      filtered = filtered.filter(startup => startup.stage === 'incubation');
     } else if (selectedMetric === 'innovation') {
-      filtered = filtered.filter(startup => startup.stage === 'Innovation');
-    } else if (selectedMetric === 'dropout') {
-      filtered = filtered.filter(startup => startup.status === 'Inactive');
+      filtered = filtered.filter(startup => startup.stage === 'innovation');
+    } else if (selectedMetric === 'pending') {
+      filtered = filtered.filter(startup => startup.status === 'Pending');
     }
 
     // Apply search filter
@@ -128,7 +162,7 @@ const AdminOverview: React.FC = () => {
       case 'total': return 'All Startups';
       case 'incubation': return 'Incubation Startups';
       case 'innovation': return 'Innovation Startups';
-      case 'dropout': return 'Dropout Startups';
+      case 'pending': return 'Pending Review Startups';
       default: return 'Startups';
     }
   };
@@ -138,11 +172,30 @@ const AdminOverview: React.FC = () => {
   const unreadCount = getUnreadCount();
 
   // Mock data for TRL distribution
-  const trlData = [
-    { level: 'TRL 1-3', count: 45, color: 'bg-gradient-to-t from-purple-600 to-purple-500', hexColor: '#8b5cf6', description: 'Basic Research' },
-    { level: 'TRL 4-6', count: 78, color: 'bg-gradient-to-t from-cyan-600 to-cyan-500', hexColor: '#06b6d4', description: 'Technology Development' },
-    { level: 'TRL 7-9', count: 33, color: 'bg-gradient-to-t from-emerald-600 to-emerald-500', hexColor: '#10b981', description: 'System Demo & Deployment' },
-  ];
+  const trlData = React.useMemo(() => {
+    if (!stats?.trlDistribution) {
+      return [
+        { level: 'TRL 1-3', count: 0, color: 'bg-gradient-to-t from-purple-600 to-purple-500', hexColor: '#8b5cf6', description: 'Basic Research' },
+        { level: 'TRL 4-6', count: 0, color: 'bg-gradient-to-t from-cyan-600 to-cyan-500', hexColor: '#06b6d4', description: 'Technology Development' },
+        { level: 'TRL 7-9', count: 0, color: 'bg-gradient-to-t from-emerald-600 to-emerald-500', hexColor: '#10b981', description: 'System Demo & Deployment' },
+      ];
+    }
+    
+    // Group TRL levels
+    const trlCounts = { '1-3': 0, '4-6': 0, '7-9': 0 };
+    
+    stats.trlDistribution.forEach(item => {
+      if (item._id <= 3) trlCounts['1-3'] += item.count;
+      else if (item._id <= 6) trlCounts['4-6'] += item.count;
+      else trlCounts['7-9'] += item.count;
+    });
+    
+    return [
+      { level: 'TRL 1-3', count: trlCounts['1-3'], color: 'bg-gradient-to-t from-purple-600 to-purple-500', hexColor: '#8b5cf6', description: 'Basic Research' },
+      { level: 'TRL 4-6', count: trlCounts['4-6'], color: 'bg-gradient-to-t from-cyan-600 to-cyan-500', hexColor: '#06b6d4', description: 'Technology Development' },
+      { level: 'TRL 7-9', count: trlCounts['7-9'], color: 'bg-gradient-to-t from-emerald-600 to-emerald-500', hexColor: '#10b981', description: 'System Demo & Deployment' },
+    ];
+  }, [stats]);
 
   const maxCount = Math.max(...trlData.map(d => d.count));
 
@@ -487,11 +540,11 @@ const AdminOverview: React.FC = () => {
                         </td>
                         <td className="py-4 px-4">
                           <span className={`px-2 py-1 rounded-full text-xs ${
-                            startup.stage === 'Incubation' 
+                            startup.stage === 'incubation' 
                               ? 'bg-green-900/30 text-green-400' 
                               : 'bg-blue-900/30 text-blue-400'
                           }`}>
-                            {startup.stage}
+                            {startup.stage === 'incubation' ? 'Incubation' : 'Innovation'}
                           </span>
                         </td>
                         <td className="py-4 px-4">

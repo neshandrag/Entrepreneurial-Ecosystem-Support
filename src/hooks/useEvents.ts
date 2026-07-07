@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Event, CreateEventData, UpdateEventData } from '../types';
-import { eventsApi } from '../services/eventsApi';
+import { eventsApi } from '../services/api';
 
 export interface UseEventsReturn {
   events: Event[];
@@ -28,17 +28,30 @@ export const useEvents = (): UseEventsReturn => {
       setLoading(true);
       setError(null);
       
-      const [eventsData, upcomingData, completedData, categoriesData] = await Promise.all([
-        eventsApi.getEvents(),
-        eventsApi.getUpcomingEvents(),
-        eventsApi.getCompletedEvents(),
-        eventsApi.getEventCategories(),
-      ]);
+      // Fetch all events and categorize them
+      const response = await eventsApi.getEvents();
+      const allEvents = response.events || [];
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const upcoming = allEvents.filter((event: any) => {
+        const eventDate = new Date(event.date);
+        return eventDate >= today;
+      });
+      
+      const completed = allEvents.filter((event: any) => {
+        const eventDate = new Date(event.date);
+        return eventDate < today;
+      });
+      
+      // Extract unique categories
+      const uniqueCategories = [...new Set(allEvents.map((event: any) => event.category))];
 
-      setEvents(eventsData);
-      setUpcomingEvents(upcomingData);
-      setCompletedEvents(completedData);
-      setCategories(categoriesData);
+      setEvents(allEvents);
+      setUpcomingEvents(upcoming);
+      setCompletedEvents(completed);
+      setCategories(uniqueCategories);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events');
       console.error('Error fetching events:', err);
@@ -50,7 +63,33 @@ export const useEvents = (): UseEventsReturn => {
   const createEvent = useCallback(async (eventData: CreateEventData): Promise<Event> => {
     try {
       setError(null);
-      const newEvent = await eventsApi.createEvent(eventData);
+      
+      // Add required fields for backend
+      const eventPayload = {
+        ...eventData,
+        eventType: 'workshop', // Default event type
+        duration: 60, // Default duration in minutes
+        registrationRequired: true,
+        isFree: true,
+        status: 'published',
+        isActive: true
+      };
+      
+      const response = await eventsApi.createEvent(eventPayload);
+      const newEvent: Event = {
+        id: response.event._id,
+        title: response.event.title,
+        description: response.event.description,
+        date: new Date(response.event.date).toISOString().split('T')[0],
+        time: response.event.time,
+        location: response.event.location,
+        category: response.event.category,
+        organizedBy: response.event.organizedBy,
+        registrationLink: response.event.registrationLink,
+        onlineEventUrl: response.event.onlineEventUrl,
+        createdAt: response.event.createdAt,
+        updatedAt: response.event.updatedAt
+      };
       
       // Update local state
       setEvents(prev => [...prev, newEvent]);
@@ -77,7 +116,22 @@ export const useEvents = (): UseEventsReturn => {
   const updateEvent = useCallback(async (eventData: UpdateEventData): Promise<Event> => {
     try {
       setError(null);
-      const updatedEvent = await eventsApi.updateEvent(eventData);
+      const { id, ...updateData } = eventData;
+      const response = await eventsApi.updateEvent(id, updateData);
+      const updatedEvent: Event = {
+        id: response.event._id,
+        title: response.event.title,
+        description: response.event.description,
+        date: new Date(response.event.date).toISOString().split('T')[0],
+        time: response.event.time,
+        location: response.event.location,
+        category: response.event.category,
+        organizedBy: response.event.organizedBy,
+        registrationLink: response.event.registrationLink,
+        onlineEventUrl: response.event.onlineEventUrl,
+        createdAt: response.event.createdAt,
+        updatedAt: response.event.updatedAt
+      };
       
       // Update local state
       setEvents(prev => prev.map(event => 

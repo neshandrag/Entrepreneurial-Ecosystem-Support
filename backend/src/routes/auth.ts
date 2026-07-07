@@ -28,39 +28,19 @@ const refreshTokenSchema = Joi.object({
   refreshToken: Joi.string().required(),
 });
 
-// @route   POST /api/auth/admin/login
-// @desc    Admin login
-// @access  Public
-router.post('/admin/login', validate(loginSchema), asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+// Generate JWT token
+const generateToken = (userId: string): string => {
+  return jwt.sign({ userId }, config.jwt.secret, {
+    expiresIn: config.jwt.expiresIn,
+  });
+};
 
-  const user = await prisma.user.findFirst({ where: { email, role: 'ADMIN' } });
-  if (!user) {
-    return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
-  }
-
-  const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) {
-    return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
-  }
-
-  await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
-
-  const tokens = await generateTokenPair({ id: user.id, email: user.email, role: user.role as UserRole });
-
-  const response: ApiResponse = {
-    success: true,
-    message: 'Admin login successful',
-    data: {
-      user: { ...user, passwordHash: undefined },
-      ...tokens,
-      redirectUrl: '/admin/dashboard',
-      role: user.role,
-    },
-  };
-
-  return res.json(response);
-}));
+// Generate refresh token
+const generateRefreshToken = (userId: string): string => {
+  return jwt.sign({ userId, type: 'refresh' }, config.jwt.secret, {
+    expiresIn: config.jwt.refreshExpiresIn,
+  });
+};
 
 // @route   POST /api/auth/login
 // @desc    Login user (startup/individual)
@@ -86,9 +66,7 @@ router.post('/login', validate(loginSchema), asyncHandler(async (req: Request, r
 
   const tokens = await generateTokenPair({ id: user.id, email: user.email, role: user.role as UserRole });
 
-  const redirectUrl = '/startup/dashboard';
-
-  const response: ApiResponse = {
+  return res.json({
     success: true,
     message: 'Login successful',
     data: {
@@ -122,7 +100,7 @@ router.post('/signup', validate(signupSchema), asyncHandler(async (req: Request,
 
   const tokens = await generateTokenPair({ id: user.id, email: user.email, role: user.role as UserRole });
 
-  const response: ApiResponse = {
+  return res.status(201).json({
     success: true,
     message: 'User registered successfully',
     data: {
@@ -152,8 +130,23 @@ router.post('/refresh', validate(refreshTokenSchema), asyncHandler(async (req: R
     return res.status(401).json({ success: false, message: 'User not found' });
   }
 
-  if (validation.tokenId) {
-    await revokeRefreshToken(validation.tokenId);
+    // Generate new tokens
+    const newToken = generateToken((user._id as any).toString());
+    const newRefreshToken = generateRefreshToken((user._id as any).toString());
+
+    return res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: {
+        token: newToken,
+        refreshToken: newRefreshToken,
+      },
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid refresh token',
+    });
   }
 
   const tokens = await generateTokenPair({ id: user.id, email: user.email, role: user.role as UserRole });
@@ -220,7 +213,10 @@ router.put('/change-password', authenticate, asyncHandler(async (req: AuthReques
   const newHash = await bcrypt.genSalt(12).then((salt) => bcrypt.hash(newPassword, salt));
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
 
-  return res.json({ success: true, message: 'Password changed successfully' });
+  return res.json({
+    success: true,
+    message: 'Password changed successfully',
+  });
 }));
 
 export default router;
